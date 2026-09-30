@@ -757,11 +757,7 @@ function AppRoutes({ isDarkMode, setIsDarkMode }) {
       />
       <Route 
         path="/admin" 
-        element={
-          <ProtectedRoute>
-            <Admin isDarkMode={isDarkMode} setIsDarkMode={setIsDarkMode} currentUser={currentUser} />
-          </ProtectedRoute>
-        } 
+        element={<AdminLogin isDarkMode={isDarkMode} setIsDarkMode={setIsDarkMode} />} 
       />
       <Route 
         path="/admin/dashboard" 
