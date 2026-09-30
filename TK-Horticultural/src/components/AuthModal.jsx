@@ -63,6 +63,10 @@ export default function AuthModal({
         return 'Google Sign-In popup was closed before completing auth.';
       case 'auth/popup-blocked':
         return 'Sign-In popup was blocked by browser. Please allow popups for this site.';
+      case 'auth/operation-not-allowed':
+        return 'Email sign-in is disabled in Firebase. Enable Email/Password under Firebase Authentication > Sign-in method.';
+      case 'auth/unauthorized-domain':
+        return 'This website is not authorized in Firebase. Add tk-horticultural.vercel.app under Authentication > Settings > Authorized domains.';
       default:
         return err.message || 'An error occurred during authentication.';
     }

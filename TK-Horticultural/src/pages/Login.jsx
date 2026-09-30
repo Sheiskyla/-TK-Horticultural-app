@@ -50,7 +50,11 @@ export default function Login({ isDarkMode }) {
       navigate('/dashboard');
     } catch (err) {
       if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
-        setErrorMsg('Invalid email/phone or password credentials.');
+        setErrorMsg('Invalid email or password.');
+      } else if (err.code === 'auth/operation-not-allowed') {
+        setErrorMsg('Email sign-in is disabled in Firebase. Enable Email/Password under Firebase Authentication > Sign-in method.');
+      } else if (err.code === 'auth/unauthorized-domain') {
+        setErrorMsg('This website is not authorized in Firebase. Add tk-horticultural.vercel.app under Authentication > Settings > Authorized domains.');
       } else {
         setErrorMsg(err.message || 'Login failed. Please check your credentials.');
       }
@@ -167,14 +171,14 @@ export default function Login({ isDarkMode }) {
             <form onSubmit={handleLoginSubmit} className="space-y-4 text-xs">
               <div>
                 <label className={`block font-bold mb-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
-                  Email Address or Phone
+                  Email Address
                 </label>
                 <div className="relative">
                   <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
                     required
-                    placeholder="ajewoleadeola386@gmail.com"
+                    placeholder="you@example.com"
                     value={emailOrPhone}
                     onChange={(e) => setEmailOrPhone(e.target.value)}
                     className={`w-full pl-10 pr-4 py-3.5 rounded-xl border focus:outline-none focus:border-emerald-500 font-medium ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
