@@ -174,7 +174,6 @@ export default function AdminLogin({ isDarkMode, setIsDarkMode }) {
                 <input
                   type="email"
                   required
-                  placeholder="admin@tkhorticultural.co.uk"
                   value={adminEmail}
                   onChange={(e) => setAdminEmail(e.target.value)}
                   className={`w-full pl-10 pr-4 py-3.5 rounded-xl border text-xs font-semibold focus:outline-none focus:border-emerald-500 transition-colors ${
@@ -193,7 +192,6 @@ export default function AdminLogin({ isDarkMode, setIsDarkMode }) {
                 <input
                   type={showPassword ? 'text' : 'password'}
                   required
-                  placeholder="••••••••••••"
                   value={adminPassword}
                   onChange={(e) => setAdminPassword(e.target.value)}
                   className={`w-full pl-10 pr-10 py-3.5 rounded-xl border text-xs font-semibold focus:outline-none focus:border-emerald-500 transition-colors ${
@@ -224,7 +222,6 @@ export default function AdminLogin({ isDarkMode, setIsDarkMode }) {
                 <input
                   type="password"
                   maxLength={6}
-                  placeholder="Security PIN (e.g. 108166)"
                   value={securityPin}
                   onChange={(e) => setSecurityPin(e.target.value)}
                   className={`w-full pl-10 pr-4 py-3.5 rounded-xl border text-xs font-semibold focus:outline-none focus:border-emerald-500 transition-colors font-mono tracking-widest ${
