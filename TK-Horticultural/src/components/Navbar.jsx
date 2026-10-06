@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import { auth, signOut } from '../firebase';
@@ -87,7 +87,7 @@ export default function Navbar({ onRequestQuote, isDarkMode, onToggleDarkMode, c
   ];
 
   return (
-    <header className="sticky top-0 z-50 w-full max-w-full transition-all duration-300">
+    <header className="fixed top-0 left-0 z-50 w-full max-w-full transition-all duration-300">
       <div
         className={`w-full overflow-hidden text-[11px] sm:text-xs py-1.5 sm:py-2 border-b relative font-semibold ${
           isDarkMode ? 'bg-emerald-950 text-emerald-200 border-emerald-900/50' : 'bg-emerald-700 text-white border-emerald-800 shadow-inner'
@@ -152,7 +152,7 @@ export default function Navbar({ onRequestQuote, isDarkMode, onToggleDarkMode, c
                     key={link.id}
                     href={link.href}
                     onClick={() => handleNavClick(link.id)}
-                    className={`px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 min-h-[44px] flex items-center ${
+                    className={`px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 min-h-[44px] flex items-center whitespace-nowrap ${
                       activeLink === link.id
                         ? isDarkMode
                           ? 'text-emerald-400 bg-emerald-950/60 border border-emerald-500/30'
@@ -185,7 +185,7 @@ export default function Navbar({ onRequestQuote, isDarkMode, onToggleDarkMode, c
               <button
                 type="button"
                 onClick={onRequestQuote}
-                className="px-4 py-2.5 rounded-xl text-xs font-black text-slate-950 bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-400 hover:from-emerald-300 hover:to-teal-200 transition-all shadow-md flex items-center gap-1.5 min-h-[44px]"
+                className="px-4 py-2.5 rounded-xl text-xs font-black text-slate-950 bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-400 hover:from-emerald-300 hover:to-teal-200 transition-all shadow-md flex items-center gap-1.5 min-h-[44px] whitespace-nowrap"
               >
                 <Sparkles className="w-4 h-4 text-slate-950" />
                 <span>Get Free Quote</span>
@@ -193,7 +193,7 @@ export default function Navbar({ onRequestQuote, isDarkMode, onToggleDarkMode, c
 
               <a
                 href="tel:07423018166"
-                className={`px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border shadow-sm min-h-[44px] ${
+                className={`px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border shadow-sm min-h-[44px] whitespace-nowrap ${
                   isDarkMode
                     ? 'bg-slate-900 text-slate-100 border-slate-800'
                     : 'bg-white text-slate-900 border-slate-200 hover:border-emerald-500/40'
