@@ -25,7 +25,8 @@ import {
   Menu,
   X,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Sparkles
 } from 'lucide-react';
 import {
   collection, doc, query, where, onSnapshot, runTransaction,
@@ -49,6 +50,9 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
   const [bookingService, setBookingService] = useState('Horticultural & Landscaping');
   const [bookingDate, setBookingDate] = useState(todayStr());
   const [selectedSlot, setSelectedSlot] = useState(null);
+  const [jobLocation, setJobLocation] = useState('');
+  const [jobDetails, setJobDetails] = useState('');
+  const [jobFiles, setJobFiles] = useState([]);
   const [bookingConfirmed, setBookingConfirmed] = useState(false);
   const [bookingError, setBookingError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -158,6 +162,18 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
   const reserveSlot = async () => {
     const chosen = baseSlots.find((s) => s.time === selectedSlot);
     if (!chosen || !uid) return;
+
+    const trimmedLocation = jobLocation.trim();
+    const trimmedDetails = jobDetails.trim();
+    if (!trimmedLocation) {
+      setBookingError('Please add the job location so we can assess the site.');
+      return;
+    }
+    if (!trimmedDetails) {
+      setBookingError('Please describe the work you want us to carry out.');
+      return;
+    }
+
     setSaving(true);
     setBookingError('');
     setBookingConfirmed(false);
@@ -165,7 +181,6 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
     const slotRef = doc(db, 'slots', `${bookingDate}_${chosen.id}`);
     const bookingRef = doc(collection(db, 'bookings'));
     try {
-      // transaction = two people can never take the same slot at the same time
       await runTransaction(db, async (tx) => {
         const existing = await tx.get(slotRef);
         if (existing.exists()) throw new Error('SLOT_TAKEN');
@@ -177,12 +192,23 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
           date: bookingDate,
           slotId: chosen.id,
           slot: chosen.time,
-          address: profile.address || '',
+          address: trimmedLocation,
+          location: trimmedLocation,
+          jobDetails: trimmedDetails,
+          jobFiles: jobFiles.map((file) => ({
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            preview: file.preview || null
+          })),
           status: 'Pending Quote',
           createdAt: serverTimestamp()
         });
       });
       setBookingConfirmed(true);
+      setJobLocation('');
+      setJobDetails('');
+      setJobFiles([]);
     } catch (e) {
       setBookingError(
         e.message === 'SLOT_TAKEN'
@@ -224,6 +250,30 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
     }
   };
 
+  const handleJobFiles = (event) => {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) return;
+
+    const mapped = files
+      .filter((file) => file.type.startsWith('image/') || file.type.startsWith('video/'))
+      .map((file) => ({
+        ...file,
+        preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
+      }));
+
+    if (mapped.length === 0) {
+      setBookingError('Please upload only images or videos for the job.');
+      return;
+    }
+
+    setJobFiles((prev) => [...prev, ...mapped]);
+    event.target.value = '';
+  };
+
+  const removeJobFile = (index) => {
+    setJobFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const navItems = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
     { id: 'book', label: 'Book a Service', icon: CalendarPlus },
@@ -260,19 +310,19 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
             Pick a service and a time slot to make your first booking.
           </p>
           <button
-            onClick={() => goTab('book')}
+            onClick={() => navigate('/booking')}
             className="mt-4 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs"
           >
-            Book a Service
+            Get a Quote
           </button>
         </div>
       ) : (
         <div className="space-y-3">
           {bookings.map((b) => (
-            <div key={b.id} className={`p-5 rounded-2xl border transition-all flex flex-col md:flex-row items-start md:items-center justify-between gap-4 ${
+            <div key={b.id} className={`p-4 sm:p-5 rounded-2xl border transition-all flex flex-col md:flex-row items-start md:items-center justify-between gap-4 ${
               isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
             }`}>
-              <div className="space-y-1.5">
+              <div className="w-full min-w-0 space-y-1.5">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">{b.ref}</span>
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
@@ -288,22 +338,28 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
                   </span>
                 </div>
 
-                <h4 className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{b.service}</h4>
+                <h4 className={`text-sm font-bold break-words ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{b.service}</h4>
                 <div className={`flex flex-wrap items-center gap-3 text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
-                  <span className="flex items-center gap-1">
+                  <span className="flex min-w-0 items-start gap-1">
                     <Calendar className="w-3.5 h-3.5 text-emerald-500" />
                     {b.date} ({b.slot})
                   </span>
-                  {b.address && (
-                    <span className="flex items-center gap-1">
+                  {(b.location || b.address) && (
+                    <span className="flex min-w-0 items-start gap-1 break-words">
                       <MapPin className="w-3.5 h-3.5 text-emerald-500" />
-                      {b.address}
+                      {b.location || b.address}
                     </span>
                   )}
                 </div>
+                {b.jobDetails && (
+                  <p className={`mt-2 text-[11px] ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                    <span className="font-bold mr-1">Job details:</span>
+                    {b.jobDetails.length > 140 ? `${b.jobDetails.slice(0, 140)}…` : b.jobDetails}
+                  </p>
+                )}
               </div>
 
-              <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end border-t md:border-t-0 pt-3 md:pt-0 border-slate-200 dark:border-slate-800">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full md:w-auto justify-between md:justify-end border-t md:border-t-0 pt-3 md:pt-0 border-slate-200 dark:border-slate-800">
                 {b.price && (
                   <span className={`text-base font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{b.price}</span>
                 )}
@@ -335,18 +391,18 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
     </div>
   );
 
-  // ---- Calendar date picker ----
+
   const calY = calMonth.getFullYear();
   const calM = calMonth.getMonth();
   const pad2 = (n) => String(n).padStart(2, '0');
-  const firstDow = (new Date(calY, calM, 1).getDay() + 6) % 7; // week starts Monday
+  const firstDow = (new Date(calY, calM, 1).getDay() + 6) % 7;
   const daysInMonth = new Date(calY, calM + 1, 0).getDate();
   const isCurrentMonth = calY === new Date().getFullYear() && calM === new Date().getMonth();
   const takenPerDate = {};
   monthSlots.forEach((s) => { takenPerDate[s.date] = (takenPerDate[s.date] || 0) + 1; });
 
   const calendar = (
-    <div className={`p-4 rounded-2xl border ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-300'}`}>
+    <div className={`p-3 sm:p-4 rounded-2xl border ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-300'}`}>
       <div className="flex items-center justify-between mb-3">
         <button
           type="button"
@@ -376,7 +432,7 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
         ))}
       </div>
 
-      <div className="grid grid-cols-7 gap-1">
+      <div className="grid grid-cols-7 gap-0.5 sm:gap-1">
         {Array.from({ length: firstDow }).map((_, i) => <span key={'e' + i} />)}
         {Array.from({ length: daysInMonth }).map((_, i) => {
           const day = i + 1;
@@ -394,7 +450,7 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
               disabled={disabled}
               onClick={() => { setBookingDate(dateStr); setSelectedSlot(null); setBookingConfirmed(false); }}
               aria-label={`${dateStr}${isFull ? ' fully booked' : ''}`}
-              className={`aspect-square rounded-lg text-xs font-bold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${
+              className={`aspect-square min-w-0 rounded-lg text-[11px] sm:text-xs font-bold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${
                 isSelected
                   ? 'bg-emerald-600 text-white'
                   : isFull
@@ -410,7 +466,7 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
         })}
       </div>
 
-      <div className={`flex items-center gap-4 mt-3 text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+      <div className={`flex flex-wrap items-center gap-x-4 gap-y-2 mt-3 text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
         <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-emerald-600" /> Selected</span>
         <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded ring-1 ring-emerald-500" /> Today</span>
         <span className="flex items-center gap-1"><span className="line-through text-amber-500">12</span> Fully booked</span>
@@ -438,7 +494,7 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
         <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
           The time slot will be released for other customers.
         </p>
-        <div className="flex gap-3">
+        <div className="flex flex-col-reverse sm:flex-row gap-3">
           <button
             onClick={() => setCancelTarget(null)}
             disabled={cancelling}
@@ -461,7 +517,7 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
   );
 
   const sidebar = (
-    <div className={`h-full flex flex-col border-r ${
+    <div className={`h-full min-h-0 flex flex-col border-r ${
       isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
     }`}>
       <div
@@ -501,11 +557,11 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
         ))}
       </nav>
 
-      <div className="p-3 space-y-2 border-t border-slate-200 dark:border-slate-800">
+      <div className="shrink-0 p-3 space-y-2 border-t border-slate-200 dark:border-slate-800">
         <button
           onClick={() => navigate('/')}
           className={`w-full px-3.5 py-2.5 rounded-xl font-bold text-xs border transition-all flex items-center gap-2 shadow-sm ${
-            isDarkMode 
+            isDarkMode
               ? 'bg-slate-800 border-slate-700 text-emerald-400 hover:bg-slate-750' 
               : 'bg-slate-100 border-slate-300 text-emerald-800 hover:bg-slate-200'
           }`}
@@ -513,6 +569,19 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
         >
           <Home className="w-4 h-4 text-emerald-500" />
           <span>Landing Page</span>
+        </button>
+
+        <button
+          onClick={() => navigate('/booking')}
+          className={`w-full px-3.5 py-2.5 rounded-xl font-bold text-xs border transition-all flex items-center gap-2 shadow-sm ${
+            isDarkMode
+              ? 'bg-emerald-950 border-emerald-700 text-emerald-300 hover:bg-emerald-900'
+              : 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100'
+          }`}
+          title="Get a Quote"
+        >
+          <Sparkles className="w-4 h-4 text-emerald-500" />
+          <span>Get a Quote</span>
         </button>
 
         <button
@@ -582,7 +651,7 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
       {/* Mobile drawer */}
       {sidebarOpen && (
         <div className="lg:hidden fixed inset-0 z-50 flex">
-          <div className="w-72 max-w-[85%] h-full">{sidebar}</div>
+          <div className="w-72 max-w-[85%] h-full overflow-y-auto overscroll-contain">{sidebar}</div>
           <button
             className="flex-1 bg-black/50"
             aria-label="Close menu"
@@ -596,36 +665,36 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
       {cancelModal}
 
       <div className="lg:pl-64 min-h-screen flex flex-col">
-        <main className="flex-grow py-8 px-4 sm:px-6 lg:px-8">
+        <main className="flex-grow min-w-0 py-5 px-3 sm:py-8 sm:px-6 lg:px-8">
           <div className="max-w-6xl mx-auto space-y-8">
 
             {/* ---------- OVERVIEW ---------- */}
             {activeTab === 'overview' && (
               <>
-                <div className={`p-6 sm:p-8 rounded-3xl border shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 ${
+                <div className={`p-4 sm:p-8 rounded-3xl border shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5 sm:gap-6 ${
                   isDarkMode ? 'bg-gradient-to-r from-slate-900 via-emerald-950/40 to-slate-900 border-slate-800' : 'bg-white border-slate-200'
                 }`}>
-                  <div className="flex items-center gap-4">
+                  <div className="flex min-w-0 items-center gap-3 sm:gap-4">
                     <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-slate-950 flex items-center justify-center font-black text-2xl shadow-md">
                       {initial}
                     </div>
-                    <div className="text-left">
+                    <div className="min-w-0 text-left">
                       <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Client Portal</span>
-                      <h1 className={`text-2xl sm:text-3xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                      <h1 className={`text-xl sm:text-3xl font-black break-words ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                         Welcome, {currentUser?.displayName || 'Valued Client'}
                       </h1>
-                      <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                      <p className={`text-xs break-all ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
                         {currentUser?.email} • Account Active
                       </p>
                     </div>
                   </div>
 
                   <button
-                    onClick={() => goTab('book')}
+                    onClick={() => navigate('/booking')}
                     className="w-full sm:w-auto px-6 py-3.5 rounded-xl font-black text-slate-950 bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-400 hover:from-emerald-300 hover:to-teal-200 shadow-lg text-xs flex items-center justify-center gap-2"
                   >
                     <Plus className="w-4 h-4 text-slate-950" />
-                    <span>Request New Booking</span>
+                    <span>Get a Quote</span>
                   </button>
                 </div>
 
@@ -671,7 +740,7 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
                   </div>
                 </div>
 
-                <div className={`p-6 sm:p-8 rounded-3xl border shadow-xl text-left ${
+                <div className={`p-4 sm:p-8 rounded-3xl border shadow-xl text-left ${
                   isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
                 }`}>
                   {bookingsList}
@@ -681,7 +750,7 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
 
             {/* ---------- BOOK A SERVICE ---------- */}
             {activeTab === 'book' && (
-              <div className={`p-6 sm:p-8 rounded-3xl border shadow-xl text-left space-y-8 ${
+              <div className={`p-4 sm:p-8 rounded-3xl border shadow-xl text-left space-y-6 sm:space-y-8 ${
                 isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
               }`}>
                 <div className="text-center max-w-3xl mx-auto space-y-3">
@@ -733,11 +802,94 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
                   </div>
                 </div>
 
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+                  <div>
+                    <label className={`block text-xs font-bold uppercase tracking-wider mb-2 ${
+                      isDarkMode ? 'text-slate-300' : 'text-slate-700'
+                    }`}>
+                      3. Job Location
+                    </label>
+                    <div className="relative">
+                      <MapPin className="w-4 h-4 absolute left-3.5 top-3.5 text-emerald-500" />
+                      <input
+                        type="text"
+                        value={jobLocation}
+                        onChange={(e) => setJobLocation(e.target.value)}
+                        placeholder="Enter the property or site address"
+                        className={`w-full pl-10 pr-4 py-3.5 rounded-xl border font-semibold text-xs focus:outline-none focus:border-emerald-500 ${
+                          isDarkMode ? 'bg-slate-950 border-slate-800 text-white placeholder:text-slate-400' : 'bg-slate-50 border-slate-300 text-slate-900 placeholder:text-slate-500'
+                        }`}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className={`block text-xs font-bold uppercase tracking-wider mb-2 ${
+                      isDarkMode ? 'text-slate-300' : 'text-slate-700'
+                    }`}>
+                      4. Upload Images / Videos
+                    </label>
+                    <label className={`flex items-center justify-center gap-2 w-full px-4 py-3.5 rounded-xl border border-dashed cursor-pointer transition-all ${
+                      isDarkMode ? 'border-slate-700 bg-slate-950 text-slate-300 hover:bg-slate-800' : 'border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                    }`}>
+                      <Plus className="w-4 h-4 text-emerald-500" />
+                      <span className="text-xs font-bold">Choose files</span>
+                      <input type="file" accept="image/*,video/*" multiple className="hidden" onChange={handleJobFiles} />
+                    </label>
+                    {jobFiles.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        {jobFiles.map((file, index) => (
+                          <div key={`${file.name}-${index}`} className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2 ${
+                            isDarkMode ? 'border-slate-800 bg-slate-950' : 'border-slate-200 bg-white'
+                          }`}>
+                            <div className="flex items-center gap-2 min-w-0">
+                              {file.type.startsWith('video/') ? (
+                                <div className="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-500 flex items-center justify-center text-[10px] font-black">VID</div>
+                              ) : (
+                                <div className="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-500 flex items-center justify-center text-[10px] font-black">IMG</div>
+                              )}
+                              <div className="min-w-0">
+                                <p className="text-[10px] font-bold truncate max-w-[170px]">{file.name}</p>
+                                <p className={`text-[9px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{Math.max(1, Math.round(file.size / 1024))} KB</p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => removeJobFile(index)}
+                              className="text-rose-500 hover:text-rose-400 transition-colors"
+                              aria-label={`Remove ${file.name}`}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="pt-4">
+                  <label className={`block text-xs font-bold uppercase tracking-wider mb-2 ${
+                    isDarkMode ? 'text-slate-300' : 'text-slate-700'
+                  }`}>
+                    5. Project Details
+                  </label>
+                  <textarea
+                    value={jobDetails}
+                    onChange={(e) => setJobDetails(e.target.value)}
+                    rows={5}
+                    placeholder="Tell us what work you want completed, the problem you're facing, or anything specific we should know before quoting."
+                    className={`w-full px-4 py-3.5 rounded-xl border font-medium text-xs focus:outline-none focus:border-emerald-500 resize-none ${
+                      isDarkMode ? 'bg-slate-950 border-slate-800 text-white placeholder:text-slate-400' : 'bg-slate-50 border-slate-300 text-slate-900 placeholder:text-slate-500'
+                    }`}
+                  />
+                </div>
+
                 <div>
                   <label className={`block text-xs font-bold uppercase tracking-wider mb-3 ${
                     isDarkMode ? 'text-slate-300' : 'text-slate-700'
                   }`}>
-                    3. Select Visual Time Slot
+                    6. Select Visual Time Slot
                   </label>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -840,7 +992,7 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
 
             {/* ---------- MY BOOKINGS ---------- */}
             {activeTab === 'bookings' && (
-              <div className={`p-6 sm:p-8 rounded-3xl border shadow-xl text-left ${
+              <div className={`p-4 sm:p-8 rounded-3xl border shadow-xl text-left ${
                 isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
               }`}>
                 {bookingsList}
@@ -849,7 +1001,7 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
 
             {/* ---------- PROFILE ---------- */}
             {activeTab === 'profile' && (
-              <div className={`p-6 sm:p-8 rounded-3xl border shadow-xl text-left ${
+              <div className={`p-4 sm:p-8 rounded-3xl border shadow-xl text-left ${
                 isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
               }`}>
                 <div className="space-y-6 max-w-xl">

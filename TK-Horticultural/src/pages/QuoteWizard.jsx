@@ -147,8 +147,8 @@ ${selectedServices.length > 0 ? selectedServices.map(s => `• ${s}`).join('\n')
         currentUser={currentUser}
       />
 
-      <main className="flex-grow py-6 sm:py-10 px-4 sm:px-6 lg:px-8 pb-28 md:pb-12">
-        <div className="max-w-5xl mx-auto space-y-6">
+      <main className="flex-grow min-w-0 py-5 sm:py-10 px-3 sm:px-6 lg:px-8 pb-28 md:pb-12">
+        <div className="max-w-5xl mx-auto space-y-5 sm:space-y-6">
           
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="text-left space-y-1">
@@ -157,7 +157,7 @@ ${selectedServices.length > 0 ? selectedServices.map(s => `• ${s}`).join('\n')
               }`}>
                 Interactive Booking Wizard
               </span>
-              <h1 className={`text-2xl sm:text-3xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+              <h1 className={`text-xl sm:text-3xl font-black break-words ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                 Request a Quote & Book Service Slot
               </h1>
             </div>
@@ -200,7 +200,7 @@ ${selectedServices.length > 0 ? selectedServices.map(s => `• ${s}`).join('\n')
           </div>
 
           {isSubmitted ? (
-            <div className={`p-6 sm:p-12 rounded-3xl border shadow-2xl text-center space-y-6 max-w-2xl mx-auto ${
+            <div className={`p-4 sm:p-12 rounded-3xl border shadow-2xl text-center space-y-6 max-w-2xl mx-auto ${
               isDarkMode ? 'bg-slate-900 border-emerald-500/40 text-white' : 'bg-white border-slate-200 text-slate-900'
             }`}>
               <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-emerald-500/20 text-emerald-500 flex items-center justify-center mx-auto">
@@ -209,7 +209,7 @@ ${selectedServices.length > 0 ? selectedServices.map(s => `• ${s}`).join('\n')
 
               <div className="space-y-2">
                 <span className="text-xs font-black uppercase text-emerald-500 tracking-wider">Booking Request Confirmed</span>
-                <h2 className="text-2xl sm:text-3xl font-black">Thank You, {contactName || 'Client'}!</h2>
+                <h2 className="text-xl sm:text-3xl font-black break-words">Thank You, {contactName || 'Client'}!</h2>
                 <p className="text-xs text-slate-400">
                   Your request reference ID: <strong className="text-emerald-500 font-bold">{bookingRef}</strong>
                 </p>
@@ -219,7 +219,7 @@ ${selectedServices.length > 0 ? selectedServices.map(s => `• ${s}`).join('\n')
                 isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
               }`}>
                 <p className="font-bold text-sm">Booking Overview:</p>
-                <p>• <strong>Selected Services:</strong> {selectedServices.join(', ') || 'General Service'}</p>
+                <p className="break-words">• <strong>Selected Services:</strong> {selectedServices.join(', ') || 'General Service'}</p>
                 <p>• <strong>Requested Date & Slot:</strong> {bookingDate} ({selectedSlot})</p>
                 <p>• <strong>Address:</strong> {address || 'Gravesend, Kent'}</p>
                 <p>• <strong>Phone Contact:</strong> {contactPhone || '07423 018166'}</p>
@@ -246,14 +246,14 @@ ${selectedServices.length > 0 ? selectedServices.map(s => `• ${s}`).join('\n')
               </div>
             </div>
           ) : (
-            <div className={`p-5 sm:p-10 rounded-3xl border shadow-2xl text-left ${
+            <div className={`p-4 sm:p-10 rounded-3xl border shadow-2xl text-left ${
               isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
             }`}>
               {currentStep === 1 && (
                 <div className="space-y-6 animate-in fade-in">
                   <div>
                     <span className="text-[10px] font-black uppercase tracking-wider text-emerald-500">Step 1 of 4</span>
-                    <h2 className={`text-2xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Select Required Services</h2>
+                    <h2 className={`text-xl sm:text-2xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Select Required Services</h2>
                     <p className={`text-xs mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
                       Check all gardening, deep cleaning, pressure washing, or waste removal services you need.
                     </p>
@@ -326,7 +326,7 @@ ${selectedServices.length > 0 ? selectedServices.map(s => `• ${s}`).join('\n')
                 <div className="space-y-6 animate-in fade-in">
                   <div>
                     <span className="text-[10px] font-black uppercase tracking-wider text-emerald-500">Step 2 of 4</span>
-                    <h2 className={`text-2xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Choose Date & Time Slot</h2>
+                    <h2 className={`text-xl sm:text-2xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Choose Date & Time Slot</h2>
                     <p className={`text-xs mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
                       Select your preferred service date and inspect real-time available time slots.
                     </p>
@@ -428,7 +428,7 @@ ${selectedServices.length > 0 ? selectedServices.map(s => `• ${s}`).join('\n')
                 <div className="space-y-6 animate-in fade-in">
                   <div>
                     <span className="text-[10px] font-black uppercase tracking-wider text-emerald-500">Step 3 of 4</span>
-                    <h2 className={`text-2xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Job Details & Media Upload</h2>
+                    <h2 className={`text-xl sm:text-2xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Job Details & Media Upload</h2>
                     <p className={`text-xs mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
                       Provide property address details, notes, and upload photos/videos of the job site.
                     </p>
@@ -545,7 +545,7 @@ ${selectedServices.length > 0 ? selectedServices.map(s => `• ${s}`).join('\n')
                 <div className="space-y-6 animate-in fade-in">
                   <div>
                     <span className="text-[10px] font-black uppercase tracking-wider text-emerald-500">Step 4 of 4</span>
-                    <h2 className={`text-2xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Contact & Review Summary</h2>
+                    <h2 className={`text-xl sm:text-2xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Contact & Review Summary</h2>
                     <p className={`text-xs mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
                       Verify your quote request details and enter contact info to submit.
                     </p>

@@ -56,6 +56,7 @@ export default function Navbar({ onRequestQuote, isDarkMode, onToggleDarkMode, c
   const navLinks = [
     { id: 'home', label: 'Home', href: '/#home' },
     { id: 'services', label: 'Services', href: '/#services' },
+    { id: 'gallery', label: 'Gallery', href: '/gallery' },
     { id: 'booking', label: 'Book Slot', href: '/booking' },
     { id: 'why-us', label: 'Why Choose Us', href: '/#why-us' },
     { id: 'reviews', label: 'Reviews', href: '/#reviews' },

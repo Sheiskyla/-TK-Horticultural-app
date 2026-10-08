@@ -6,6 +6,7 @@ import Login from './pages/Login';
 import Signup from './pages/Signup';
 import QuoteWizard from './pages/QuoteWizard';
 import Dashboard from './pages/Dashboard';
+import Gallery from './pages/Gallery';
 import AdminLogin from './pages/AdminLogin';
 import Admin from './pages/Admin';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -398,6 +399,16 @@ function AppRoutes({ isDarkMode, setIsDarkMode }) {
         element={<Signup isDarkMode={isDarkMode} />}
       />
       <Route
+        path="/gallery"
+        element={
+          <Gallery
+            isDarkMode={isDarkMode}
+            setIsDarkMode={setIsDarkMode}
+            currentUser={currentUser}
+          />
+        }
+      />
+      <Route
         path="/booking"
         element={
           <ProtectedRoute>
@@ -456,4 +467,3 @@ export default function App() {
     </AuthProvider>
   );
 }
-
