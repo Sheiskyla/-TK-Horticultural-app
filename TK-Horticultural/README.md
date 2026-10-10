@@ -42,7 +42,7 @@ The `firestore.rules` and `storage.rules` files protect user-owned records and r
 firebase deploy --only firestore:rules,storage
 ```
 
-New email/password and Google accounts create their `users/{uid}` profile in the authenticated client flow. The `functions/index.js` `onUserCreated` Authentication trigger also syncs every newly-created Firebase Auth user to Firestore; deploy it once to enable the server-side sync:
+New email/password and Google accounts create their `users/{uid}` profile in the authenticated client flow. The `functions/index.js` `onUserCreated` Authentication trigger syncs every newly-created Firebase Auth user to Firestore. The admin dashboard also runs the protected `syncAllUsers` callable when opened and offers a manual **Sync Firebase users** action to backfill existing Firebase Authentication accounts. Deploy Cloud Functions to enable the trigger and the backfill:
 
 ```sh
 firebase deploy --only functions

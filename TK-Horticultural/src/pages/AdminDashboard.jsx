@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, Component } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, Component } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   addDoc, collection, deleteDoc, doc, serverTimestamp, setDoc, updateDoc, writeBatch
@@ -33,59 +33,6 @@ const NAV_ITEMS = [
 
 const BOOKING_STATUS_OPTIONS = [
   'All statuses', 'Pending', 'Pending Quote', 'Approved', 'Confirmed', 'Declined', 'Completed', 'Cancelled'
-];
-
-const CONSOLE_USERS_SEED = [
-  {
-    id: 'WaUsxFvlE1gsTR8syWLFXv6O',
-    uid: 'WaUsxFvlE1gsTR8syWLFXv6O',
-    email: 'tkhorticulture@gmail.com',
-    displayName: 'Administrator',
-    role: 'admin',
-    createdAt: new Date('2026-10-09T19:15:00Z'),
-    disabled: false,
-    providers: ['password']
-  },
-  {
-    id: 'Ds09PLSB7VOwLIKBn4pUhM',
-    uid: 'Ds09PLSB7VOwLIKBn4pUhM',
-    email: 'judahk065@gmail.com',
-    displayName: 'Judah K',
-    role: 'client',
-    createdAt: new Date('2026-10-05T12:00:00Z'),
-    disabled: false,
-    providers: ['google.com']
-  },
-  {
-    id: 'PdZqVKouQjYHO4K6VABiWUf',
-    uid: 'PdZqVKouQjYHO4K6VABiWUf',
-    email: 'olabayoemmanuel@gmail.com',
-    displayName: 'Olabayo Emmanuel',
-    role: 'client',
-    createdAt: new Date('2026-10-02T12:00:00Z'),
-    disabled: false,
-    providers: ['google.com']
-  },
-  {
-    id: 'Uas9Zifi6NSOM4e6GQ4Ooncj',
-    uid: 'Uas9Zifi6NSOM4e6GQ4Ooncj',
-    email: 'ajewoleayomide386@gmail.com',
-    displayName: 'Ajewole Ayomide',
-    role: 'client',
-    createdAt: new Date('2026-10-09T12:00:00Z'),
-    disabled: false,
-    providers: ['google.com']
-  },
-  {
-    id: 'jbp5nZHDTONGaP24b32ROj9',
-    uid: 'jbp5nZHDTONGaP24b32ROj9',
-    email: 'ajewoleadeola386@gmail.com',
-    displayName: 'Ajewole Adeola',
-    role: 'client',
-    createdAt: new Date('2026-09-30T12:00:00Z'),
-    disabled: false,
-    providers: ['google.com']
-  }
 ];
 
 function dateString(date) {
@@ -248,6 +195,7 @@ class AdminErrorBoundary extends Component {
 
 function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
   const navigate = useNavigate();
+  const userSyncStarted = useRef(false);
   const [activeSection, setActiveSection] = useState('overview');
   
   const [userSearch, setUserSearch] = useState('');
@@ -272,24 +220,6 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
   const [feedback, setFeedback] = useState('');
   const [actionError, setActionError] = useState('');
 
-  const [deletedUserIds, setDeletedUserIds] = useState(() => {
-    try {
-      const raw = localStorage.getItem('tk_deleted_user_ids');
-      const parsed = raw ? JSON.parse(raw) : [];
-      const list = Array.isArray(parsed) ? parsed : [];
-      return list.filter((id) => id !== 'Uas9Zifi6NSOM4e6GQ4Ooncj' && id !== 'BAB6fyI9t7fd1K82RmJbhDN8');
-    } catch { return []; }
-  });
-
-  const [deletedEmails, setDeletedEmails] = useState(() => {
-    try {
-      const raw = localStorage.getItem('tk_deleted_user_emails');
-      const parsed = raw ? JSON.parse(raw) : [];
-      const list = Array.isArray(parsed) ? parsed : [];
-      return list.filter((e) => String(e || '').toLowerCase().trim() !== 'ajewoleayomide386@gmail.com');
-    } catch { return []; }
-  });
-
   const [disabledMap, setDisabledMap] = useState(() => {
     try {
       const raw = localStorage.getItem('tk_disabled_users_map');
@@ -297,24 +227,6 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
       return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
     } catch { return {}; }
   });
-
-  const trackDeletedUser = (id, email) => {
-    const cleanEmail = (email || '').toLowerCase().trim();
-    setDeletedUserIds((prev) => {
-      const safePrev = Array.isArray(prev) ? prev : [];
-      const next = Array.from(new Set([...safePrev, id]));
-      try { localStorage.setItem('tk_deleted_user_ids', JSON.stringify(next)); } catch (e) {}
-      return next;
-    });
-    if (cleanEmail) {
-      setDeletedEmails((prev) => {
-        const safePrev = Array.isArray(prev) ? prev : [];
-        const next = Array.from(new Set([...safePrev, cleanEmail]));
-        try { localStorage.setItem('tk_deleted_user_emails', JSON.stringify(next)); } catch (e) {}
-        return next;
-      });
-    }
-  };
 
   const [galleryFiles, setGalleryFiles] = useState([]);
   const [galleryTitle, setGalleryTitle] = useState('');
@@ -358,70 +270,10 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
 
   const allUsersCombined = useMemo(() => {
     const userDocs = Array.isArray(users?.documents) ? users.documents : [];
-    const existingEmails = new Set(userDocs.map((u) => (u?.email || '').toLowerCase().trim()).filter(Boolean));
-    const safeDeletedIds = Array.isArray(deletedUserIds) ? deletedUserIds : [];
-    const safeDeletedEmails = Array.isArray(deletedEmails) ? deletedEmails : [];
-    const deletedIdSet = new Set(safeDeletedIds);
-    const deletedEmailSet = new Set(safeDeletedEmails.map((e) => String(e || '').toLowerCase().trim()).filter(Boolean));
-
-    const combined = userDocs
-      .filter((u) => {
-        if (!u) return false;
-        const uId = u.id || u.uid;
-        return (!uId || !deletedIdSet.has(uId)) && u.deleted !== true;
-      })
-      .map((u) => {
-        return { ...u, disabled: getDisabledStatus(u, disabledMap) };
-      });
-
-    (CONSOLE_USERS_SEED || []).forEach((seedUser) => {
-      if (!seedUser || !seedUser.email) return;
-      const sEmail = seedUser.email.toLowerCase().trim();
-      if (!existingEmails.has(sEmail) && !deletedIdSet.has(seedUser.id)) {
-        combined.push({ ...seedUser, disabled: getDisabledStatus(seedUser, disabledMap) });
-        existingEmails.add(sEmail);
-      }
-    });
-
-    return combined;
-  }, [users.documents, deletedUserIds, deletedEmails, disabledMap]);
-
-  useEffect(() => {
-    if (users.loading || !Array.isArray(users.documents)) return;
-    const existingEmails = new Set(users.documents.map((u) => (u?.email || '').toLowerCase().trim()).filter(Boolean));
-    const safeDeletedIds = Array.isArray(deletedUserIds) ? deletedUserIds : [];
-    const deletedIdSet = new Set(safeDeletedIds);
-
-    CONSOLE_USERS_SEED.forEach(async (seedUser) => {
-      if (!seedUser || !seedUser.email) return;
-      const sEmail = seedUser.email.toLowerCase().trim();
-      if (!existingEmails.has(sEmail) && !deletedIdSet.has(seedUser.id)) {
-        try {
-          await setDoc(doc(db, 'users', seedUser.id), {
-            uid: seedUser.id,
-            email: seedUser.email,
-            displayName: seedUser.displayName,
-            role: seedUser.role,
-            source: 'console',
-            disabled: false,
-            createdAt: serverTimestamp(),
-            lastSignInAt: serverTimestamp(),
-            isOnline: seedUser.email === auth.currentUser?.email
-          }, { merge: true });
-
-          if (seedUser.role === 'admin') {
-            await setDoc(doc(db, 'admins', seedUser.id), {
-              email: seedUser.email,
-              role: 'admin',
-              grantedAt: serverTimestamp()
-            }, { merge: true });
-          }
-        } catch (e) {
-          console.warn('Auto-seed note:', e);
-        }
-      }
-    });
-  }, [users.loading, users.documents, deletedUserIds]);
+    return userDocs
+      .filter(Boolean)
+      .map((user) => ({ ...user, disabled: getDisabledStatus(user, disabledMap) }));
+  }, [users.documents, disabledMap]);
 
 
   const activeSelectedUser = useMemo(() => {
@@ -509,51 +361,27 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
 
   const clearFeedback = () => { setFeedback(''); setActionError(''); };
 
-  // BACKFILL CALLABLE EXECUTION WITH SEED FALLBACK
-  const handleSyncAllUsers = async () => {
+  // Backfill existing Firebase Authentication accounts; snapshots update the table afterward.
+  const handleSyncAllUsers = useCallback(async () => {
     setSyncingAuth(true);
-    clearFeedback();
+    setFeedback('');
+    setActionError('');
     try {
       const res = await syncAllUsersCallable();
       setFeedback(res.message || `Successfully synced ${res.count} accounts from Firebase Authentication.`);
     } catch (err) {
-      console.warn('Callable functions notice, executing instant Console users sync fallback:', err.message);
-      
-      try {
-        let syncedCount = 0;
-        for (const seedUser of CONSOLE_USERS_SEED) {
-          const userRef = doc(db, 'users', seedUser.id);
-          await setDoc(userRef, {
-            uid: seedUser.id,
-            email: seedUser.email,
-            displayName: seedUser.displayName,
-            role: seedUser.role,
-            source: 'console',
-            disabled: false,
-            createdAt: serverTimestamp(),
-            lastSignInAt: serverTimestamp(),
-            isOnline: seedUser.email === auth.currentUser?.email
-          }, { merge: true });
-
-          if (seedUser.role === 'admin') {
-            await setDoc(doc(db, 'admins', seedUser.id), {
-              email: seedUser.email,
-              role: 'admin',
-              grantedAt: serverTimestamp()
-            }, { merge: true });
-          }
-          syncedCount += 1;
-        }
-
-        setFeedback(`Synchronized all 5 Firebase Console accounts to Firestore.`);
-      } catch (fallbackErr) {
-        console.error('Client sync fallback error:', fallbackErr);
-        setActionError(fallbackErr.message || 'Sync operation failed.');
-      }
+      console.error('Firebase Auth user synchronization failed:', err);
+      setActionError(`Could not sync Firebase Authentication users. Deploy the syncAllUsers Cloud Function and try again. ${err.message || ''}`.trim());
     } finally {
       setSyncingAuth(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (userSyncStarted.current) return;
+    userSyncStarted.current = true;
+    void handleSyncAllUsers();
+  }, [handleSyncAllUsers]);
 
   const handleToggleUserDisabled = async (targetUser) => {
     if (!targetUser) return;
@@ -649,42 +477,15 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
     if (!confirmAction || confirmAction.kind !== 'delete-user') return;
     const { targetUser } = confirmAction;
     const targetId = targetUser.id || targetUser.uid;
-    const targetEmail = (targetUser.email || '').toLowerCase().trim();
-
     setBusyKey(`delete:${targetId}`);
     clearFeedback();
 
-    // 1. Immediately track deletion to exclude from seed list and prevent auto-re-seeding
-    trackDeletedUser(targetId, targetEmail);
-
     try {
-      // Attempt backend Cloud Function callable first
       await deleteUserAccountCallable(targetId, deleteBookingsOption);
       setFeedback(`User account ${targetUser.email || targetUser.displayName} deleted successfully.`);
     } catch (err) {
-      console.warn('Backend callable note, using direct database deletion:', err);
-      try {
-        // Direct Firestore cleanup fallback
-        await deleteDoc(doc(db, 'users', targetId));
-        await deleteDoc(doc(db, 'admins', targetId));
-
-        // Delete associated bookings if requested
-        if (deleteBookingsOption) {
-          const userBookings = bookings.documents.filter(
-            (b) => b.userId === targetId || (b.customerEmail && b.customerEmail.toLowerCase().trim() === targetEmail)
-          );
-          if (userBookings.length > 0) {
-            const batch = writeBatch(db);
-            userBookings.forEach((b) => batch.delete(doc(db, 'bookings', b.id)));
-            await batch.commit();
-          }
-        }
-
-        setFeedback(`User account ${targetUser.email || targetUser.displayName} removed from database.`);
-      } catch (fsErr) {
-        console.error('Firestore delete error:', fsErr);
-        setActionError(fsErr.message || 'Could not delete user account from database.');
-      }
+      console.error('Unable to delete Firebase Authentication user:', err);
+      setActionError(`Could not delete the account. Deploy the deleteUserAccount Cloud Function and try again. ${err.message || ''}`.trim());
     } finally {
       if (selectedUserDetails?.id === targetId || selectedUserDetails?.uid === targetId) {
         setSelectedUserDetails(null);
@@ -1002,9 +803,15 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
 
               {/* Users Management Section */}
               <article className={`overflow-hidden rounded-3xl border ${cardClass}`}>
-                <div className="border-b border-slate-200 dark:border-slate-800 p-5">
-                  <h2 className="font-black text-base">User Account Management</h2>
-                  <p className="text-xs text-slate-400 font-medium">Manage user permissions, status, and bookings ({clientUsersCount} Clients · {adminUsersCount} Admins)</p>
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-5 dark:border-slate-800">
+                  <div>
+                    <h2 className="font-black text-base">User Account Management</h2>
+                    <p className="text-xs text-slate-400 font-medium">Manage user permissions, status, and bookings ({clientUsersCount} Clients · {adminUsersCount} Admins)</p>
+                  </div>
+                  <button type="button" onClick={handleSyncAllUsers} disabled={syncingAuth} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60">
+                    <RefreshCw className={`h-4 w-4 ${syncingAuth ? 'animate-spin' : ''}`} />
+                    {syncingAuth ? 'Syncing accounts…' : 'Sync Firebase users'}
+                  </button>
                 </div>
 
                 {/* Search, Filter & Sort Controls */}
