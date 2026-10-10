@@ -1,5 +1,9 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import { collection, doc, onSnapshot, query, runTransaction, serverTimestamp, where } from 'firebase/firestore';
+import { db } from '../firebase';
+import { uploadMediaFile } from '../lib/uploadMediaFile';
+import useDateAvailability, { BOOKING_SLOTS, isSlotAvailable, weekdayAvailabilityId } from '../hooks/useDateAvailability';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import { 
@@ -7,20 +11,16 @@ import {
   Sparkles, 
   Trash2, 
   CheckCircle, 
-  Phone, 
   MessageSquare, 
   MapPin, 
-  Calendar, 
   Clock, 
   Upload, 
   X, 
   ArrowRight, 
   ArrowLeft, 
   CheckCircle2, 
-  ShieldCheck, 
   Send, 
   FileText, 
-  Home,
   LayoutDashboard
 } from 'lucide-react';
 
@@ -29,8 +29,11 @@ export default function QuoteWizard({ isDarkMode, setIsDarkMode, currentUser }) 
   const [currentStep, setCurrentStep] = useState(1);
 
   const [selectedServices, setSelectedServices] = useState([]);
-  const [bookingDate, setBookingDate] = useState('2026-09-28');
-  const [selectedSlot, setSelectedSlot] = useState('9am–12pm');
+  const [bookingDate, setBookingDate] = useState(() => {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  });
+  const [selectedSlot, setSelectedSlot] = useState(null);
 
   const [address, setAddress] = useState('');
   const [jobNotes, setJobNotes] = useState('');
@@ -39,9 +42,14 @@ export default function QuoteWizard({ isDarkMode, setIsDarkMode, currentUser }) 
   const [contactName, setContactName] = useState(currentUser?.displayName || '');
   const [contactPhone, setContactPhone] = useState('');
   const [contactEmail, setContactEmail] = useState(currentUser?.email || '');
+  const [estimatedBudget, setEstimatedBudget] = useState('');
 
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [bookingRef, setBookingRef] = useState('');
+  const [slotReservations, setSlotReservations] = useState([]);
+  const { dateSettings, weeklySettings, loading: availabilityLoading, error: availabilityError } = useDateAvailability(bookingDate);
+  const [submitError, setSubmitError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const serviceCategories = [
     {
@@ -80,11 +88,25 @@ export default function QuoteWizard({ isDarkMode, setIsDarkMode, currentUser }) 
     }
   ];
 
-  const timeSlots = [
-    { id: 'slot-1', time: '9am–12pm', status: 'Available' },
-    { id: 'slot-2', time: '12pm–3pm', status: 'Booked' },
-    { id: 'slot-3', time: '3pm–6pm', status: 'Available' }
-  ];
+  const baseTimeSlots = BOOKING_SLOTS.map((slot) => ({ id: slot.id, field: slot.field, time: slot.label }));
+  const timeSlots = baseTimeSlots.map((slot) => ({
+    ...slot,
+    status: slotReservations.includes(slot.id)
+      ? 'Booked'
+      : !isSlotAvailable(dateSettings, weeklySettings, slot.field)
+        ? 'Unavailable'
+        : 'Available'
+  }));
+
+  React.useEffect(() => {
+    const reservationsQuery = query(collection(db, 'slots'), where('date', '==', bookingDate));
+    const unsubscribeReservations = onSnapshot(
+      reservationsQuery,
+      (snapshot) => setSlotReservations(snapshot.docs.map((item) => item.data().slotId)),
+      (error) => console.error('Unable to load booked slots:', error)
+    );
+    return () => unsubscribeReservations();
+  }, [bookingDate]);
 
   const handleServiceToggle = (item) => {
     if (selectedServices.includes(item)) {
@@ -101,23 +123,98 @@ export default function QuoteWizard({ isDarkMode, setIsDarkMode, currentUser }) 
         name: file.name,
         size: (file.size / (1024 * 1024)).toFixed(2) + ' MB',
         type: file.type,
+        file,
         preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : null
       }));
-      setUploadedFiles([...uploadedFiles, ...newFiles]);
+      setUploadedFiles((current) => [...current, ...newFiles]);
     }
   };
 
   const handleRemoveFile = (index) => {
     const updated = [...uploadedFiles];
+    if (updated[index].preview) URL.revokeObjectURL(updated[index].preview);
     updated.splice(index, 1);
     setUploadedFiles(updated);
   };
 
-  const handleWizardSubmit = (e) => {
+  const handleWizardSubmit = async (e) => {
     e.preventDefault();
-    const randomRef = 'TK-' + Math.floor(100000 + Math.random() * 900000);
-    setBookingRef(randomRef);
-    setIsSubmitted(true);
+    if (availabilityLoading || availabilityError) {
+      setSubmitError('Availability is still loading or could not be checked. Please try again.');
+      return;
+    }
+    if (!currentUser?.uid || !selectedSlot) {
+      setSubmitError('Choose an available time slot before submitting.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setSubmitError('');
+    const refCode = `TK-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
+    const bookingDocument = doc(collection(db, 'bookings'));
+    const quoteDocument = doc(collection(db, 'quotes'));
+    const chosen = baseTimeSlots.find((slot) => slot.time === selectedSlot);
+
+    try {
+      const attachments = await Promise.all(uploadedFiles.map(({ file }) => uploadMediaFile(
+        file,
+        `users/${currentUser.uid}/quotes/${quoteDocument.id}/${Date.now()}_${file.name.replace(/[^\w.-]/g, '_')}`
+      )));
+      await runTransaction(db, async (transaction) => {
+        const reservationRef = doc(db, 'slots', `${bookingDate}_${chosen.id}`);
+        const availabilityRef = doc(db, 'availability', bookingDate);
+        const weeklyAvailabilityRef = doc(db, 'availability_defaults', weekdayAvailabilityId(bookingDate));
+        const reservation = await transaction.get(reservationRef);
+        const settings = await transaction.get(availabilityRef);
+        const weeklySettingsSnapshot = await transaction.get(weeklyAvailabilityRef);
+        if (reservation.exists()) throw new Error('SLOT_TAKEN');
+        if (!isSlotAvailable(
+          settings.exists() ? settings.data() : null,
+          weeklySettingsSnapshot.exists() ? weeklySettingsSnapshot.data() : null,
+          chosen.field
+        )) throw new Error('SLOT_UNAVAILABLE');
+
+        const common = {
+          userId: currentUser.uid,
+          customerName: contactName.trim(),
+          customerEmail: contactEmail.trim(),
+          customerPhone: contactPhone.trim(),
+          ref: refCode,
+          service: selectedServices.join(', '),
+          date: bookingDate,
+          slotId: chosen.id,
+          slot: chosen.time,
+          address: address.trim(),
+          jobDetails: jobNotes.trim(),
+          attachments,
+          createdAt: serverTimestamp()
+        };
+        transaction.set(reservationRef, {
+          date: bookingDate,
+          slotId: chosen.id,
+          userId: currentUser.uid,
+          createdAt: serverTimestamp()
+        });
+        transaction.set(bookingDocument, { ...common, status: 'Pending Quote' });
+        transaction.set(quoteDocument, {
+          ...common,
+          requestedServices: selectedServices,
+          requestedDate: bookingDate,
+          requestedSlot: chosen.time,
+          estimatedBudget: estimatedBudget ? Number(estimatedBudget) : null,
+          status: 'New'
+        });
+      });
+      setBookingRef(refCode);
+      setIsSubmitted(true);
+    } catch (error) {
+      console.error('Unable to submit the booking and quote request:', error);
+      setSubmitError(error.message === 'SLOT_TAKEN' || error.message === 'SLOT_UNAVAILABLE'
+        ? 'That time slot is no longer available. Please choose another slot.'
+        : error.message || 'Could not submit your request. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const generateWhatsAppMessage = () => {
@@ -279,7 +376,6 @@ ${selectedServices.length > 0 ? selectedServices.map(s => `• ${s}`).join('\n')
                               return (
                                 <label
                                   key={itemIdx}
-                                  onClick={() => handleServiceToggle(item)}
                                   className={`p-3.5 rounded-xl border flex items-center gap-3 cursor-pointer transition-all min-h-[44px] ${
                                     isChecked
                                       ? 'bg-emerald-600 text-white border-emerald-500 font-bold shadow-md'
@@ -288,11 +384,11 @@ ${selectedServices.length > 0 ? selectedServices.map(s => `• ${s}`).join('\n')
                                         : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
                                   }`}
                                 >
-                                  <input 
+                                  <input
                                     type="checkbox"
                                     checked={isChecked}
-                                    onChange={() => {}}
-                                    className="hidden"
+                                    onChange={() => handleServiceToggle(item)}
+                                    className="sr-only"
                                   />
                                   <div className={`w-4 h-4 rounded flex items-center justify-center border shrink-0 ${
                                     isChecked ? 'bg-white text-emerald-600 border-white' : 'border-slate-400'
@@ -341,8 +437,12 @@ ${selectedServices.length > 0 ? selectedServices.map(s => `• ${s}`).join('\n')
                       </label>
                       <input
                         type="date"
+                        min={new Date().toLocaleDateString('en-CA')}
                         value={bookingDate}
-                        onChange={(e) => setBookingDate(e.target.value)}
+                        onChange={(e) => {
+                          setBookingDate(e.target.value);
+                          setSelectedSlot(null);
+                        }}
                         className={`w-full px-4 py-3.5 rounded-xl border font-bold text-xs focus:outline-none focus:border-emerald-500 min-h-[44px] ${
                           isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
                         }`}
@@ -356,23 +456,23 @@ ${selectedServices.length > 0 ? selectedServices.map(s => `• ${s}`).join('\n')
                         Available Daily Slots
                       </label>
 
-                      {/* Responsive Time Slot Cards: Full-width stacked vertical cards on mobile, inline flex/grid on tablets/desktop */}
                       <div className="flex flex-col md:flex-row md:grid md:grid-cols-3 gap-3">
+                        {availabilityError && <p role="alert" className="text-xs text-rose-500">Availability could not be loaded: {availabilityError.message}</p>}
                         {timeSlots.map((slot) => {
                           const isSelected = selectedSlot === slot.time;
                           const isAvailable = slot.status === 'Available';
-                          const isBooked = slot.status === 'Booked';
+                          const isUnavailable = !isAvailable;
 
                           return (
                             <button
                               type="button"
                               key={slot.id}
-                              disabled={isBooked}
+                              disabled={isUnavailable || availabilityLoading || Boolean(availabilityError)}
                               onClick={() => {
                                 if (isAvailable) setSelectedSlot(slot.time);
                               }}
                               className={`w-full p-4 rounded-xl border transition-all text-left flex items-center justify-between min-h-[52px] ${
-                                isBooked
+                                isUnavailable
                                   ? 'bg-slate-100 dark:bg-slate-950/40 border-slate-200 dark:border-slate-900 text-slate-400 dark:text-slate-600 cursor-not-allowed opacity-60'
                                   : isSelected
                                   ? 'bg-emerald-600 text-white border-emerald-500 font-bold shadow-md'
@@ -384,9 +484,9 @@ ${selectedServices.length > 0 ? selectedServices.map(s => `• ${s}`).join('\n')
                                 {slot.time}
                               </span>
 
-                              {isBooked ? (
+                              {isUnavailable ? (
                                 <span className="text-[10px] font-bold px-2 py-1 rounded bg-slate-300 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                                  Booked
+                                  {slot.status}
                                 </span>
                               ) : (
                                 <span className={`text-[10px] font-bold px-2.5 py-1 rounded ${
@@ -415,7 +515,8 @@ ${selectedServices.length > 0 ? selectedServices.map(s => `• ${s}`).join('\n')
 
                     <button
                       onClick={() => setCurrentStep(3)}
-                      className="w-full sm:w-auto px-8 py-3.5 rounded-xl font-black text-slate-950 bg-gradient-to-r from-emerald-400 to-teal-300 hover:from-emerald-300 hover:to-teal-200 transition-all text-xs flex items-center justify-center gap-2 shadow-md min-h-[44px]"
+                      disabled={!selectedSlot}
+                      className="w-full sm:w-auto px-8 py-3.5 rounded-xl font-black text-slate-950 bg-gradient-to-r from-emerald-400 to-teal-300 hover:from-emerald-300 hover:to-teal-200 transition-all text-xs flex items-center justify-center gap-2 shadow-md min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <span>Continue to Details & Photos</span>
                       <ArrowRight className="w-4 h-4" />
@@ -552,6 +653,11 @@ ${selectedServices.length > 0 ? selectedServices.map(s => `• ${s}`).join('\n')
                   </div>
 
                   <form onSubmit={handleWizardSubmit} className="space-y-4 text-xs">
+                    {submitError && (
+                      <div role="alert" className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-rose-600 dark:text-rose-300">
+                        {submitError}
+                      </div>
+                    )}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div>
                         <label className={`block font-bold mb-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
@@ -612,6 +718,22 @@ ${selectedServices.length > 0 ? selectedServices.map(s => `• ${s}`).join('\n')
                         <p>• <strong>Address:</strong> {address || 'Not specified'}</p>
                         <p>• <strong>Photos Uploaded:</strong> {uploadedFiles.length} file(s)</p>
                       </div>
+                      <label className="block">
+                        <span className={`block font-bold mb-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                          Estimated budget (optional)
+                        </span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={estimatedBudget}
+                          onChange={(event) => setEstimatedBudget(event.target.value)}
+                          placeholder="e.g. 150"
+                          className={`w-full px-4 py-3 rounded-xl border font-medium focus:outline-none focus:border-emerald-500 ${
+                            isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-300 text-slate-900'
+                          }`}
+                        />
+                      </label>
                     </div>
 
                     <div className="pt-6 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row justify-between gap-3">
@@ -628,10 +750,11 @@ ${selectedServices.length > 0 ? selectedServices.map(s => `• ${s}`).join('\n')
 
                       <button
                         type="submit"
+                        disabled={isSubmitting}
                         className="w-full sm:w-auto px-8 py-3.5 rounded-xl font-black text-slate-950 bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-400 hover:from-emerald-300 transition-all text-xs flex items-center justify-center gap-2 shadow-lg min-h-[44px]"
                       >
                         <Send className="w-4 h-4 text-slate-950" />
-                        <span>Confirm & Submit Booking Request</span>
+                        <span>{isSubmitting ? 'Submitting…' : 'Confirm & Submit Booking Request'}</span>
                       </button>
                     </div>
                   </form>

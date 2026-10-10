@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Footer from '../components/Footer';
 import { 
@@ -33,6 +33,8 @@ import {
   writeBatch, setDoc, serverTimestamp
 } from 'firebase/firestore';
 import { auth, db, signOut } from '../firebase';
+import { uploadMediaFile } from '../lib/uploadMediaFile';
+import useDateAvailability, { BOOKING_SLOTS, isSlotAvailable, weekdayAvailabilityId } from '../hooks/useDateAvailability';
 
 const todayStr = () => {
   const d = new Date();
@@ -43,7 +45,6 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
   const navigate = useNavigate();
   const uid = currentUser?.uid;
 
-  // sidebar navigation: overview | book | bookings | profile
   const [activeTab, setActiveTab] = useState('overview');
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -57,13 +58,12 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
   const [bookingError, setBookingError] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // real-time data (null = still loading)
   const [bookings, setBookings] = useState(null);
   const [takenSlots, setTakenSlots] = useState([]);
+  const { dateSettings: selectedDateAvailability, weeklySettings: selectedWeekAvailability, loading: availabilityLoading, error: availabilityError } = useDateAvailability(bookingDate);
   const [profile, setProfile] = useState({ phone: '', address: '' });
   const [profileSaved, setProfileSaved] = useState(false);
 
-  // calendar + cancel dialog
   const [calMonth, setCalMonth] = useState(() => {
     const d = new Date();
     return new Date(d.getFullYear(), d.getMonth(), 1);
@@ -72,20 +72,17 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
   const [cancelTarget, setCancelTarget] = useState(null);
   const [cancelling, setCancelling] = useState(false);
 
-  const baseSlots = [
-    { id: 'slot-1', time: '9am–12pm' },
-    { id: 'slot-2', time: '12pm–3pm' },
-    { id: 'slot-3', time: '3pm–6pm' },
-  ];
+  const baseSlots = BOOKING_SLOTS.map((slot) => ({ id: slot.id, time: slot.label, field: slot.field }));
 
-  // status is now live: a slot is "Booked" when it exists in Firestore for the chosen date
   const timeSlots = baseSlots.map((s) => ({
     ...s,
-    status: takenSlots.includes(s.id) ? 'Booked' : 'Available'
+    status: takenSlots.includes(s.id)
+      ? 'Booked'
+      : !isSlotAvailable(selectedDateAvailability, selectedWeekAvailability, s.field)
+        ? 'Unavailable'
+        : 'Available'
   }));
 
-  // ---- Real-time listeners ----
-  // 1) only THIS user's bookings (a new user gets an empty list)
   useEffect(() => {
     if (!uid) return;
     const q = query(collection(db, 'bookings'), where('userId', '==', uid));
@@ -100,13 +97,11 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
     );
   }, [uid]);
 
-  // 2) taken slots for the selected date (any user) so availability is live
   useEffect(() => {
     const q = query(collection(db, 'slots'), where('date', '==', bookingDate));
     return onSnapshot(q, (snap) => setTakenSlots(snap.docs.map((d) => d.data().slotId)), (e) => console.error(e));
   }, [bookingDate]);
 
-  // 2b) all taken slots in the month shown on the calendar (to mark fully booked days)
   useEffect(() => {
     const y = calMonth.getFullYear();
     const m = String(calMonth.getMonth() + 1).padStart(2, '0');
@@ -118,7 +113,6 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
     return onSnapshot(q, (snap) => setMonthSlots(snap.docs.map((d) => d.data())), (e) => console.error(e));
   }, [calMonth]);
 
-  // 3) profile details
   useEffect(() => {
     if (!uid) return;
     return onSnapshot(doc(db, 'users', uid), (snap) => {
@@ -126,13 +120,6 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
     });
   }, [uid]);
 
-  // if someone else takes the slot you picked, deselect it
-  useEffect(() => {
-    const picked = baseSlots.find((s) => s.time === selectedSlot);
-    if (picked && takenSlots.includes(picked.id)) setSelectedSlot(null);
-  }, [takenSlots]); // eslint-disable-line
-
-  // ---- Stats from real bookings ----
   const stats = useMemo(() => {
     const list = bookings || [];
     const live = list.filter((b) => b.status !== 'Cancelled' && b.status !== 'Completed');
@@ -145,6 +132,13 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
 
   const handleSignOut = async () => {
     try {
+      if (uid) {
+        await setDoc(doc(db, 'users', uid), {
+          uid,
+          isOnline: false,
+          lastActiveAt: serverTimestamp(),
+        }, { merge: true });
+      }
       await signOut(auth);
       navigate('/login');
     } catch (err) {
@@ -162,6 +156,10 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
   const reserveSlot = async () => {
     const chosen = baseSlots.find((s) => s.time === selectedSlot);
     if (!chosen || !uid) return;
+    if (availabilityLoading || availabilityError) {
+      setBookingError('Availability is still loading or could not be checked. Please try again.');
+      return;
+    }
 
     const trimmedLocation = jobLocation.trim();
     const trimmedDetails = jobDetails.trim();
@@ -179,33 +177,47 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
     setBookingConfirmed(false);
 
     const slotRef = doc(db, 'slots', `${bookingDate}_${chosen.id}`);
+    const availabilityRef = doc(db, 'availability', bookingDate);
+    const weeklyAvailabilityRef = doc(db, 'availability_defaults', weekdayAvailabilityId(bookingDate));
     const bookingRef = doc(collection(db, 'bookings'));
     try {
+      const uploadedJobFiles = await Promise.all(jobFiles.map((file) => uploadMediaFile(
+        file.file,
+        `users/${uid}/bookings/${bookingRef.id}/${Date.now()}_${file.name.replace(/[^\w.-]/g, '_')}`
+      )));
       await runTransaction(db, async (tx) => {
         const existing = await tx.get(slotRef);
         if (existing.exists()) throw new Error('SLOT_TAKEN');
+        const availability = await tx.get(availabilityRef);
+        const weeklyAvailability = await tx.get(weeklyAvailabilityRef);
+        if (!isSlotAvailable(
+          availability.exists() ? availability.data() : null,
+          weeklyAvailability.exists() ? weeklyAvailability.data() : null,
+          chosen.field
+        )) {
+          throw new Error('SLOT_UNAVAILABLE');
+        }
         tx.set(slotRef, { date: bookingDate, slotId: chosen.id, userId: uid, createdAt: serverTimestamp() });
         tx.set(bookingRef, {
           userId: uid,
+          customerName: currentUser?.displayName || '',
+          customerEmail: currentUser?.email || '',
           ref: 'TK-' + Math.floor(100000 + Math.random() * 900000),
           service: bookingService,
+          division: bookingService,
           date: bookingDate,
           slotId: chosen.id,
           slot: chosen.time,
           address: trimmedLocation,
           location: trimmedLocation,
           jobDetails: trimmedDetails,
-          jobFiles: jobFiles.map((file) => ({
-            name: file.name,
-            type: file.type,
-            size: file.size,
-            preview: file.preview || null
-          })),
+          jobFiles: uploadedJobFiles,
           status: 'Pending Quote',
           createdAt: serverTimestamp()
         });
       });
       setBookingConfirmed(true);
+      jobFiles.forEach((file) => file.preview && URL.revokeObjectURL(file.preview));
       setJobLocation('');
       setJobDetails('');
       setJobFiles([]);
@@ -213,6 +225,8 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
       setBookingError(
         e.message === 'SLOT_TAKEN'
           ? 'Someone just took that slot. Please pick another time.'
+          : e.message === 'SLOT_UNAVAILABLE'
+            ? 'This slot was marked unavailable. Please choose another time.'
           : 'Could not save your booking. Please try again.'
       );
     } finally {
@@ -220,7 +234,6 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
     }
   };
 
-  // opens the confirmation dialog
   const cancelBooking = (b) => setCancelTarget(b);
 
   const confirmCancel = async () => {
@@ -230,7 +243,7 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
     try {
       const batch = writeBatch(db);
       batch.update(doc(db, 'bookings', b.id), { status: 'Cancelled' });
-      batch.delete(doc(db, 'slots', `${b.date}_${b.slotId}`)); // frees the slot for others
+      batch.delete(doc(db, 'slots', `${b.date}_${b.slotId}`));
       await batch.commit();
       setCancelTarget(null);
     } catch (e) {
@@ -242,7 +255,13 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
 
   const saveProfile = async () => {
     try {
-      await setDoc(doc(db, 'users', uid), { phone: profile.phone, address: profile.address }, { merge: true });
+      await setDoc(doc(db, 'users', uid), {
+        uid,
+        email: currentUser?.email || '',
+        displayName: currentUser?.displayName || '',
+        phone: profile.phone,
+        address: profile.address
+      }, { merge: true });
       setProfileSaved(true);
       setTimeout(() => setProfileSaved(false), 2500);
     } catch (e) {
@@ -257,7 +276,10 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
     const mapped = files
       .filter((file) => file.type.startsWith('image/') || file.type.startsWith('video/'))
       .map((file) => ({
-        ...file,
+        file,
+        name: file.name,
+        type: file.type,
+        size: file.size,
         preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
       }));
 
@@ -271,7 +293,11 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
   };
 
   const removeJobFile = (index) => {
-    setJobFiles((prev) => prev.filter((_, i) => i !== index));
+    setJobFiles((prev) => {
+      const removed = prev[index];
+      if (removed?.preview) URL.revokeObjectURL(removed.preview);
+      return prev.filter((_, i) => i !== index);
+    });
   };
 
   const navItems = [
@@ -474,7 +500,7 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
     </div>
   );
 
-  // ---- Cancel confirmation dialog ----
+
   const cancelModal = cancelTarget && (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60" role="dialog" aria-modal="true">
       <div className={`w-full max-w-sm p-6 rounded-3xl border shadow-2xl space-y-4 ${
@@ -628,10 +654,8 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
       isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'
     }`}>
 
-      {/* Desktop sidebar */}
       <aside className="hidden lg:block fixed inset-y-0 left-0 w-64 z-40">{sidebar}</aside>
 
-      {/* Mobile top bar */}
       <header className={`lg:hidden sticky top-0 z-40 border-b shadow-md flex items-center justify-between px-4 py-3 ${
         isDarkMode ? 'bg-slate-900/95 border-slate-800 text-white backdrop-blur-md' : 'bg-white/95 border-slate-200 text-slate-900 backdrop-blur-md'
       }`}>
@@ -648,7 +672,6 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
         </div>
       </header>
 
-      {/* Mobile drawer */}
       {sidebarOpen && (
         <div className="lg:hidden fixed inset-0 z-50 flex">
           <div className="w-72 max-w-[85%] h-full overflow-y-auto overscroll-contain">{sidebar}</div>
@@ -893,13 +916,17 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
                   </label>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    {availabilityError && <p role="alert" className="text-xs text-rose-500">Could not load availability: {availabilityError.message}</p>}
                     {timeSlots.map((slot) => {
                       const isSelected = selectedSlot === slot.time;
                       const isAvailable = slot.status === 'Available';
+                      const isUnavailable = !isAvailable;
 
                       return (
-                        <div
+                        <button
+                          type="button"
                           key={slot.id}
+                          disabled={isUnavailable || availabilityLoading || Boolean(availabilityError)}
                           onClick={() => {
                             if (isAvailable) { setSelectedSlot(slot.time); setBookingConfirmed(false); }
                           }}
@@ -925,15 +952,15 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
                               </span>
                             ) : (
                               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-400 border border-amber-300 dark:border-amber-500/30">
-                                Booked
+                                {slot.status}
                               </span>
                             )}
                           </div>
 
                           <p className={`text-[11px] ${isSelected ? 'text-emerald-100' : isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
-                            {isAvailable ? 'Open slot for Gravesend / Kent area.' : 'Slot reserved.'}
+                            {isAvailable ? 'Open slot for Gravesend / Kent area.' : slot.status === 'Booked' ? 'Slot already reserved.' : 'Unavailable by the service team.'}
                           </p>
-                        </div>
+                        </button>
                       );
                     })}
                   </div>

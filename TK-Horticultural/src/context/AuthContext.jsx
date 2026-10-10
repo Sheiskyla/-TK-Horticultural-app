@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   onAuthStateChanged, 
   createUserWithEmailAndPassword, 
@@ -8,29 +8,35 @@ import {
   updateProfile 
 } from 'firebase/auth';
 import { auth, googleProvider } from '../firebase';
-
-export const AuthContext = createContext(null);
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-};
+import { db } from '../firebase';
+import { doc, getDoc, serverTimestamp, setDoc, Timestamp } from 'firebase/firestore';
+import { AuthContext } from './authContextCore';
 
 export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const signup = async (email, password, displayName) => {
+  const signup = async (email, password, displayName, phone = '', address = '') => {
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     if (displayName && userCredential.user) {
       await updateProfile(userCredential.user, { displayName });
-      setCurrentUser({
-        ...userCredential.user,
-        displayName
-      });
+    }
+    if (userCredential.user) {
+      const userRef = doc(db, 'users', userCredential.user.uid);
+      const createdAt = userCredential.user.metadata?.creationTime
+        ? Timestamp.fromDate(new Date(userCredential.user.metadata.creationTime))
+        : serverTimestamp();
+      await setDoc(userRef, {
+        uid: userCredential.user.uid,
+        displayName: displayName || '',
+        email: email || '',
+        phone: phone || '',
+        address: address || '',
+        role: 'client',
+        createdAt,
+        lastActiveAt: serverTimestamp(),
+        isOnline: true,
+      }, { merge: true });
     }
     return userCredential;
   };
@@ -43,7 +49,18 @@ export const AuthProvider = ({ children }) => {
     return signInWithPopup(auth, googleProvider);
   };
 
-  const logout = () => {
+  const logout = async () => {
+    if (auth.currentUser) {
+      try {
+        const userRef = doc(db, 'users', auth.currentUser.uid);
+        await setDoc(userRef, {
+          isOnline: false,
+          lastActiveAt: serverTimestamp()
+        }, { merge: true });
+      } catch (err) {
+        console.warn('Presence logout update note:', err);
+      }
+    }
     return signOut(auth);
   };
 
@@ -55,6 +72,86 @@ export const AuthProvider = ({ children }) => {
 
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!currentUser) return undefined;
+
+    const userRef = doc(db, 'users', currentUser.uid);
+    let lastUpdate = 0;
+    let profileInitialized = false;
+    let needsCreateRole = false;
+
+    const syncPresence = async (isOnline, force = false) => {
+      const now = Date.now();
+      if (isOnline && !force && now - lastUpdate < 10_000) return;
+      lastUpdate = now;
+
+      try {
+        if (!profileInitialized) {
+          const profileSnapshot = await getDoc(userRef);
+          needsCreateRole = !profileSnapshot.exists();
+          profileInitialized = true;
+        }
+        const createdAt = currentUser.metadata?.creationTime
+          ? Timestamp.fromDate(new Date(currentUser.metadata.creationTime))
+          : serverTimestamp();
+        const profile = {
+          uid: currentUser.uid,
+          displayName: currentUser.displayName || '',
+          email: currentUser.email || '',
+          createdAt,
+          lastActiveAt: serverTimestamp(),
+          isOnline,
+        };
+        if (needsCreateRole) {
+          profile.role = 'client';
+        }
+        await setDoc(userRef, profile, { merge: true });
+      } catch (error) {
+        console.error('Unable to sync user profile or activity status:', error);
+      }
+    };
+
+    syncPresence(true, true);
+
+    const heartbeat = window.setInterval(() => syncPresence(true, true), 25_000);
+
+    const handleUserActivity = () => {
+      if (document.visibilityState === 'visible') {
+        syncPresence(true);
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        syncPresence(true, true);
+      } else {
+        syncPresence(false, true);
+      }
+    };
+
+    const handleBeforeUnload = () => {
+      syncPresence(false, true);
+    };
+
+    window.addEventListener('mousemove', handleUserActivity, { passive: true });
+    window.addEventListener('keydown', handleUserActivity, { passive: true });
+    window.addEventListener('click', handleUserActivity, { passive: true });
+    window.addEventListener('touchstart', handleUserActivity, { passive: true });
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.clearInterval(heartbeat);
+      window.removeEventListener('mousemove', handleUserActivity);
+      window.removeEventListener('keydown', handleUserActivity);
+      window.removeEventListener('click', handleUserActivity);
+      window.removeEventListener('touchstart', handleUserActivity);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      syncPresence(false, true);
+    };
+  }, [currentUser]);
 
   const value = {
     currentUser,

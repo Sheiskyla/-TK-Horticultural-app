@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useAuth } from '../context/AuthContext';
+import { useState } from 'react';
+import { useAuth } from '../context/authContextCore';
 import { 
   User, 
   Mail, 

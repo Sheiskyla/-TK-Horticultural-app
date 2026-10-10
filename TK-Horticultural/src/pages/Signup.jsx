@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/authContextCore';
 import {
   Leaf,
   Mail,
@@ -57,7 +57,7 @@ export default function Signup({ isDarkMode }) {
 
     setLoading(true);
     try {
-      await signup(email, password, fullName);
+      await signup(email, password, fullName, phoneNumber, addressPostcode);
       navigate('/dashboard');
     } catch (err) {
       if (err.code === 'auth/email-already-in-use') {

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import Login from './pages/Login';
@@ -7,21 +7,23 @@ import Signup from './pages/Signup';
 import QuoteWizard from './pages/QuoteWizard';
 import Dashboard from './pages/Dashboard';
 import Gallery from './pages/Gallery';
+import GalleryGrid from './components/GalleryGrid';
 import AdminLogin from './pages/AdminLogin';
-import Admin from './pages/Admin';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import AdminDashboard from './pages/AdminDashboard';
+import { AuthProvider } from './context/AuthContext';
+import { useAuth } from './context/authContextCore';
 import ProtectedRoute from './components/ProtectedRoute';
+import ProtectedAdminRoute from './components/ProtectedAdminRoute';
 import {
   Leaf,
   Sparkles,
   Trash2,
-  Phone,
-  MessageSquare,
   ShieldCheck,
   ArrowRight,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
-  ChevronDown
+  MessageSquare
 } from 'lucide-react';
 
 function LandingPage({ isDarkMode, setIsDarkMode, currentUser }) {
@@ -31,8 +33,9 @@ function LandingPage({ isDarkMode, setIsDarkMode, currentUser }) {
   const heroBgImage = "https://images.unsplash.com/photo-1585320806297-9794b3e4eeae?auto=format&fit=crop&w=1920&q=80";
 
   return (
-    <div className={`min-h-screen transition-colors duration-300 flex flex-col font-sans selection:bg-emerald-500 selection:text-white ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'
-      }`}>
+    <div className={`min-h-screen transition-colors duration-300 flex flex-col font-sans selection:bg-emerald-500 selection:text-white ${
+      isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'
+    }`}>
       <Navbar
         onRequestQuote={() => navigate('/booking')}
         isDarkMode={isDarkMode}
@@ -46,32 +49,36 @@ function LandingPage({ isDarkMode, setIsDarkMode, currentUser }) {
           <div
             className="absolute inset-0 bg-cover bg-center bg-no-repeat pointer-events-none"
             style={{ backgroundImage: `url(${heroBgImage})` }}
-          ></div>
+          />
 
-          <div className={`absolute inset-0 pointer-events-none ${isDarkMode ? 'hero-bg-overlay-dark' : 'hero-bg-overlay-light'
-            }`}></div>
+          <div className={`absolute inset-0 pointer-events-none ${
+            isDarkMode ? 'hero-bg-overlay-dark' : 'hero-bg-overlay-light'
+          }`} />
 
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
 
               <div className="lg:col-span-7 text-left space-y-5 sm:space-y-6">
-                <div className={`inline-flex items-center gap-2 px-3 py-1 sm:px-3.5 sm:py-1.5 rounded-full border shadow-sm max-w-full ${isDarkMode
-                  ? 'bg-emerald-950/80 border-emerald-500/40 text-emerald-300'
-                  : 'bg-emerald-50 border-emerald-300 text-emerald-800'
-                  }`}>
-                  <span className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-emerald-500 animate-ping shrink-0"></span>
+                <div className={`inline-flex items-center gap-2 px-3 py-1 sm:px-3.5 sm:py-1.5 rounded-full border shadow-sm max-w-full ${
+                  isDarkMode
+                    ? 'bg-emerald-950/80 border-emerald-500/40 text-emerald-300'
+                    : 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                }`}>
+                  <span className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-emerald-500 animate-ping shrink-0" />
                   <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider truncate">
                     Gravesend & Kent Premier Team
                   </span>
                 </div>
 
-                <h1 className={`text-2xl sm:text-4xl lg:text-6xl font-black tracking-tight leading-tight break-words ${isDarkMode ? 'text-white' : 'text-slate-900'
-                  }`}>
+                <h1 className={`text-2xl sm:text-4xl lg:text-6xl font-black tracking-tight leading-tight break-words ${
+                  isDarkMode ? 'text-white' : 'text-slate-900'
+                }`}>
                   Professional Gardening, Deep Cleaning & Waste Disposal in <span className="bg-gradient-to-r from-emerald-600 via-teal-500 to-emerald-700 dark:from-emerald-400 dark:via-teal-300 dark:to-emerald-500 bg-clip-text text-transparent">Gravesend, Kent</span>
                 </h1>
 
-                <p className={`text-sm sm:text-lg max-w-2xl leading-relaxed ${isDarkMode ? 'text-slate-300' : 'text-slate-700 font-medium'
-                  }`}>
+                <p className={`text-sm sm:text-lg max-w-2xl leading-relaxed ${
+                  isDarkMode ? 'text-slate-300' : 'text-slate-700 font-medium'
+                }`}>
                   Local experts providing fast, reliable, and eco-friendly property maintenance. From precision landscaping to pressure washing and Environment Agency Reliable waste removal.
                 </p>
 
@@ -89,8 +96,9 @@ function LandingPage({ isDarkMode, setIsDarkMode, currentUser }) {
                     href="https://wa.me/447423018166"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className={`px-6 sm:px-7 py-3.5 sm:py-4 rounded-xl font-bold border shadow-md transition-all flex items-center justify-center gap-2.5 text-sm sm:text-base ${isDarkMode ? 'bg-slate-900 hover:bg-slate-800 text-white border-slate-700' : 'bg-white hover:bg-slate-50 text-slate-900 border-slate-300'
-                      }`}
+                    className={`px-6 sm:px-7 py-3.5 sm:py-4 rounded-xl font-bold border shadow-md transition-all flex items-center justify-center gap-2.5 text-sm sm:text-base ${
+                      isDarkMode ? 'bg-slate-900 hover:bg-slate-800 text-white border-slate-700' : 'bg-white hover:bg-slate-50 text-slate-900 border-slate-300'
+                    }`}
                   >
                     <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600 dark:text-emerald-400" />
                     <span>Chat on WhatsApp</span>
@@ -119,10 +127,9 @@ function LandingPage({ isDarkMode, setIsDarkMode, currentUser }) {
               </div>
 
               <div className="lg:col-span-5 relative">
-                <div className={`relative rounded-3xl p-6 sm:p-8 border shadow-2xl space-y-6 backdrop-blur-md ${isDarkMode
-                  ? 'bg-slate-900/90 border-slate-800'
-                  : 'bg-white/95 border-slate-200'
-                  }`}>
+                <div className={`relative rounded-3xl p-6 sm:p-8 border shadow-2xl space-y-6 backdrop-blur-md ${
+                  isDarkMode ? 'bg-slate-900/90 border-slate-800' : 'bg-white/95 border-slate-200'
+                }`}>
 
                   <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
                     <div className="flex items-center gap-3">
@@ -140,8 +147,9 @@ function LandingPage({ isDarkMode, setIsDarkMode, currentUser }) {
                   </div>
 
                   <div className="space-y-3.5 text-left">
-                    <div className={`p-3.5 rounded-xl border flex items-center gap-3 ${isDarkMode ? 'bg-slate-950/80 border-slate-800' : 'bg-slate-50 border-slate-200'
-                      }`}>
+                    <div className={`p-3.5 rounded-xl border flex items-center gap-3 ${
+                      isDarkMode ? 'bg-slate-950/80 border-slate-800' : 'bg-slate-50 border-slate-200'
+                    }`}>
                       <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
                         <Leaf className="w-5 h-5" />
                       </div>
@@ -151,8 +159,9 @@ function LandingPage({ isDarkMode, setIsDarkMode, currentUser }) {
                       </div>
                     </div>
 
-                    <div className={`p-3.5 rounded-xl border flex items-center gap-3 ${isDarkMode ? 'bg-slate-950/80 border-slate-800' : 'bg-slate-50 border-slate-200'
-                      }`}>
+                    <div className={`p-3.5 rounded-xl border flex items-center gap-3 ${
+                      isDarkMode ? 'bg-slate-950/80 border-slate-800' : 'bg-slate-50 border-slate-200'
+                    }`}>
                       <div className="p-2 rounded-lg bg-teal-500/10 text-teal-600 dark:text-teal-400">
                         <Sparkles className="w-5 h-5" />
                       </div>
@@ -162,8 +171,9 @@ function LandingPage({ isDarkMode, setIsDarkMode, currentUser }) {
                       </div>
                     </div>
 
-                    <div className={`p-3.5 rounded-xl border flex items-center gap-3 ${isDarkMode ? 'bg-slate-950/80 border-slate-800' : 'bg-slate-50 border-slate-200'
-                      }`}>
+                    <div className={`p-3.5 rounded-xl border flex items-center gap-3 ${
+                      isDarkMode ? 'bg-slate-950/80 border-slate-800' : 'bg-slate-50 border-slate-200'
+                    }`}>
                       <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
                         <Trash2 className="w-5 h-5" />
                       </div>
@@ -183,8 +193,9 @@ function LandingPage({ isDarkMode, setIsDarkMode, currentUser }) {
                     </a>
                     <a
                       href="tel:07405681878"
-                      className={`flex-1 py-3 rounded-xl border font-bold text-xs transition-colors text-center ${isDarkMode ? 'bg-slate-800 text-slate-200 border-slate-700' : 'bg-slate-100 text-slate-800 border-slate-300'
-                        }`}
+                      className={`flex-1 py-3 rounded-xl border font-bold text-xs transition-colors text-center ${
+                        isDarkMode ? 'bg-slate-800 text-slate-200 border-slate-700' : 'bg-slate-100 text-slate-800 border-slate-300'
+                      }`}
                     >
                       Call 07405 681878
                     </a>
@@ -197,12 +208,14 @@ function LandingPage({ isDarkMode, setIsDarkMode, currentUser }) {
           </div>
         </section>
 
-        <section id="services" className={`py-20 border-b transition-colors duration-300 ${isDarkMode ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200'
-          }`}>
+        <section id="services" className={`py-20 border-b transition-colors duration-300 ${
+          isDarkMode ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200'
+        }`}>
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center max-w-3xl mx-auto mb-14 space-y-3">
-              <span className={`text-xs font-bold uppercase tracking-wider px-3.5 py-1 rounded-full border ${isDarkMode ? 'text-emerald-400 bg-emerald-950 border-emerald-500/30' : 'text-emerald-800 bg-emerald-50 border-emerald-300'
-                }`}>
+              <span className={`text-xs font-bold uppercase tracking-wider px-3.5 py-1 rounded-full border ${
+                isDarkMode ? 'text-emerald-400 bg-emerald-950 border-emerald-500/30' : 'text-emerald-800 bg-emerald-50 border-emerald-300'
+              }`}>
                 3 Main Service Divisions
               </span>
               <h2 className={`text-3xl sm:text-4xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
@@ -217,10 +230,11 @@ function LandingPage({ isDarkMode, setIsDarkMode, currentUser }) {
 
               <div
                 onClick={() => setExpandedDivision(expandedDivision === 'horticulture' ? 'all' : 'horticulture')}
-                className={`rounded-3xl p-7 border transition-all duration-300 text-left space-y-5 flex flex-col justify-between cursor-pointer group shadow-xl ${isDarkMode
-                  ? 'bg-slate-950 border-slate-800 hover:border-emerald-500/50'
-                  : 'bg-slate-50/90 border-slate-200 hover:border-emerald-500/50 shadow-slate-200/50'
-                  }`}
+                className={`rounded-3xl p-7 border transition-all duration-300 text-left space-y-5 flex flex-col justify-between cursor-pointer group shadow-xl ${
+                  isDarkMode
+                    ? 'bg-slate-950 border-slate-800 hover:border-emerald-500/50'
+                    : 'bg-slate-50/90 border-slate-200 hover:border-emerald-500/50 shadow-slate-200/50'
+                }`}
               >
                 <div className="space-y-4">
                   <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center group-hover:scale-105 transition-transform border border-emerald-500/20">
@@ -267,10 +281,11 @@ function LandingPage({ isDarkMode, setIsDarkMode, currentUser }) {
 
               <div
                 onClick={() => setExpandedDivision(expandedDivision === 'cleaning' ? 'all' : 'cleaning')}
-                className={`rounded-3xl p-7 border transition-all duration-300 text-left space-y-5 flex flex-col justify-between cursor-pointer group shadow-xl ${isDarkMode
-                  ? 'bg-slate-950 border-slate-800 hover:border-teal-500/50'
-                  : 'bg-slate-50/90 border-slate-200 hover:border-teal-500/50 shadow-slate-200/50'
-                  }`}
+                className={`rounded-3xl p-7 border transition-all duration-300 text-left space-y-5 flex flex-col justify-between cursor-pointer group shadow-xl ${
+                  isDarkMode
+                    ? 'bg-slate-950 border-slate-800 hover:border-teal-500/50'
+                    : 'bg-slate-50/90 border-slate-200 hover:border-teal-500/50 shadow-slate-200/50'
+                }`}
               >
                 <div className="space-y-4">
                   <div className="w-14 h-14 rounded-2xl bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center group-hover:scale-105 transition-transform border border-teal-500/20">
@@ -315,10 +330,11 @@ function LandingPage({ isDarkMode, setIsDarkMode, currentUser }) {
 
               <div
                 onClick={() => setExpandedDivision(expandedDivision === 'waste' ? 'all' : 'waste')}
-                className={`rounded-3xl p-7 border transition-all duration-300 text-left space-y-5 flex flex-col justify-between cursor-pointer group shadow-xl ${isDarkMode
-                  ? 'bg-slate-950 border-slate-800 hover:border-emerald-500/50'
-                  : 'bg-slate-50/90 border-slate-200 hover:border-emerald-500/50 shadow-slate-200/50'
-                  }`}
+                className={`rounded-3xl p-7 border transition-all duration-300 text-left space-y-5 flex flex-col justify-between cursor-pointer group shadow-xl ${
+                  isDarkMode
+                    ? 'bg-slate-950 border-slate-800 hover:border-emerald-500/50'
+                    : 'bg-slate-50/90 border-slate-200 hover:border-emerald-500/50 shadow-slate-200/50'
+                }`}
               >
                 <div className="space-y-4">
                   <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center group-hover:scale-105 transition-transform border border-emerald-500/20">
@@ -363,6 +379,8 @@ function LandingPage({ isDarkMode, setIsDarkMode, currentUser }) {
             </div>
           </div>
         </section>
+
+        <GalleryGrid isDarkMode={isDarkMode} />
 
       </main>
 
@@ -440,24 +458,35 @@ function AppRoutes({ isDarkMode, setIsDarkMode }) {
         path="/admin/login"
         element={<AdminLogin isDarkMode={isDarkMode} setIsDarkMode={setIsDarkMode} />}
       />
-      <Route
-        path="/admin"
-        element={<AdminLogin isDarkMode={isDarkMode} setIsDarkMode={setIsDarkMode} />}
-      />
+      <Route path="/admin" element={<Navigate to="/admin/login" replace />} />
       <Route
         path="/admin/dashboard"
         element={
-          <ProtectedRoute>
-            <Admin isDarkMode={isDarkMode} setIsDarkMode={setIsDarkMode} currentUser={currentUser} />
-          </ProtectedRoute>
+          <ProtectedAdminRoute>
+            <AdminDashboard isDarkMode={isDarkMode} setIsDarkMode={setIsDarkMode} />
+          </ProtectedAdminRoute>
         }
       />
+      <Route path="/admin/*" element={<Navigate to="/admin/login" replace />} />
     </Routes>
   );
 }
 
 export default function App() {
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const savedTheme = localStorage.getItem('tk-theme');
+    if (savedTheme === null) return false;
+
+    try {
+      return JSON.parse(savedTheme);
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('tk-theme', JSON.stringify(isDarkMode));
+  }, [isDarkMode]);
 
   return (
     <AuthProvider>
