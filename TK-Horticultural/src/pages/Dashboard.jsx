@@ -133,16 +133,16 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
   const handleSignOut = async () => {
     try {
       if (uid) {
-        await setDoc(doc(db, 'users', uid), {
+        setDoc(doc(db, 'users', uid), {
           uid,
           isOnline: false,
           lastActiveAt: serverTimestamp(),
-        }, { merge: true });
+        }, { merge: true }).catch(() => {});
       }
       await signOut(auth);
       navigate('/login');
     } catch (err) {
-      console.error(err);
+      console.error('Sign out error:', err);
     }
   };
 

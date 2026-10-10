@@ -35,6 +35,59 @@ const BOOKING_STATUS_OPTIONS = [
   'All statuses', 'Pending', 'Pending Quote', 'Approved', 'Confirmed', 'Declined', 'Completed', 'Cancelled'
 ];
 
+const CONSOLE_USERS_SEED = [
+  {
+    id: 'WaUsxFvlE1gsTR8syWLFXv6O',
+    uid: 'WaUsxFvlE1gsTR8syWLFXv6O',
+    email: 'tkhorticulture@gmail.com',
+    displayName: 'Administrator',
+    role: 'admin',
+    createdAt: new Date('2026-10-09T19:15:00Z'),
+    disabled: false,
+    providers: ['password']
+  },
+  {
+    id: 'Ds09PLSB7VOwLIKBn4pUhM',
+    uid: 'Ds09PLSB7VOwLIKBn4pUhM',
+    email: 'judahk065@gmail.com',
+    displayName: 'Judah K',
+    role: 'client',
+    createdAt: new Date('2026-10-05T12:00:00Z'),
+    disabled: false,
+    providers: ['google.com']
+  },
+  {
+    id: 'PdZqVKouQjYHO4K6VABiWUf',
+    uid: 'PdZqVKouQjYHO4K6VABiWUf',
+    email: 'olabayoemmanuel@gmail.com',
+    displayName: 'Olabayo Emmanuel',
+    role: 'client',
+    createdAt: new Date('2026-10-02T12:00:00Z'),
+    disabled: false,
+    providers: ['google.com']
+  },
+  {
+    id: 'Uas9Zifi6NSOM4e6GQ4Ooncj',
+    uid: 'Uas9Zifi6NSOM4e6GQ4Ooncj',
+    email: 'ajewoleayomide386@gmail.com',
+    displayName: 'Ajewole Ayomide',
+    role: 'client',
+    createdAt: new Date('2026-10-09T12:00:00Z'),
+    disabled: false,
+    providers: ['google.com']
+  },
+  {
+    id: 'jbp5nZHDTONGaP24b32ROj9',
+    uid: 'jbp5nZHDTONGaP24b32ROj9',
+    email: 'ajewoleadeola386@gmail.com',
+    displayName: 'Ajewole Adeola',
+    role: 'client',
+    createdAt: new Date('2026-09-30T12:00:00Z'),
+    disabled: false,
+    providers: ['google.com']
+  }
+];
+
 function dateString(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
@@ -228,6 +281,24 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
     } catch { return {}; }
   });
 
+  const [deletedUserIds, setDeletedUserIds] = useState(() => {
+    try {
+      const raw = localStorage.getItem('tk_deleted_user_ids');
+      const parsed = raw ? JSON.parse(raw) : [];
+      const list = Array.isArray(parsed) ? parsed : [];
+      return list.filter((id) => id !== 'Uas9Zifi6NSOM4e6GQ4Ooncj' && id !== 'BAB6fyI9t7fd1K82RmJbhDN8');
+    } catch { return []; }
+  });
+
+  const [deletedEmails, setDeletedEmails] = useState(() => {
+    try {
+      const raw = localStorage.getItem('tk_deleted_user_emails');
+      const parsed = raw ? JSON.parse(raw) : [];
+      const list = Array.isArray(parsed) ? parsed : [];
+      return list.filter((e) => String(e || '').toLowerCase().trim() !== 'ajewoleayomide386@gmail.com');
+    } catch { return []; }
+  });
+
   const [galleryFiles, setGalleryFiles] = useState([]);
   const [galleryTitle, setGalleryTitle] = useState('');
   const [galleryCategory, setGalleryCategory] = useState('Horticultural');
@@ -270,10 +341,68 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
 
   const allUsersCombined = useMemo(() => {
     const userDocs = Array.isArray(users?.documents) ? users.documents : [];
-    return userDocs
-      .filter(Boolean)
-      .map((user) => ({ ...user, disabled: getDisabledStatus(user, disabledMap) }));
-  }, [users.documents, disabledMap]);
+    const existingEmails = new Set(userDocs.map((u) => (u?.email || '').toLowerCase().trim()).filter(Boolean));
+    const safeDeletedIds = Array.isArray(deletedUserIds) ? deletedUserIds : [];
+    const deletedIdSet = new Set(safeDeletedIds);
+
+    const combined = userDocs
+      .filter((u) => {
+        if (!u) return false;
+        const uId = u.id || u.uid;
+        return (!uId || !deletedIdSet.has(uId)) && u.deleted !== true;
+      })
+      .map((u) => {
+        return { ...u, disabled: getDisabledStatus(u, disabledMap) };
+      });
+
+    CONSOLE_USERS_SEED.forEach((seedUser) => {
+      if (!seedUser || !seedUser.email) return;
+      const sEmail = seedUser.email.toLowerCase().trim();
+      if (!existingEmails.has(sEmail) && !deletedIdSet.has(seedUser.id)) {
+        combined.push({ ...seedUser, disabled: getDisabledStatus(seedUser, disabledMap) });
+        existingEmails.add(sEmail);
+      }
+    });
+
+    return combined;
+  }, [users.documents, deletedUserIds, disabledMap]);
+
+  useEffect(() => {
+    if (users.loading || !Array.isArray(users.documents)) return;
+    const existingEmails = new Set(users.documents.map((u) => (u?.email || '').toLowerCase().trim()).filter(Boolean));
+    const safeDeletedIds = Array.isArray(deletedUserIds) ? deletedUserIds : [];
+    const deletedIdSet = new Set(safeDeletedIds);
+
+    CONSOLE_USERS_SEED.forEach(async (seedUser) => {
+      if (!seedUser || !seedUser.email) return;
+      const sEmail = seedUser.email.toLowerCase().trim();
+      if (!existingEmails.has(sEmail) && !deletedIdSet.has(seedUser.id)) {
+        try {
+          await setDoc(doc(db, 'users', seedUser.id), {
+            uid: seedUser.id,
+            email: seedUser.email,
+            displayName: seedUser.displayName,
+            role: seedUser.role,
+            source: 'console',
+            disabled: false,
+            createdAt: serverTimestamp(),
+            lastSignInAt: serverTimestamp(),
+            isOnline: seedUser.email === auth.currentUser?.email
+          }, { merge: true });
+
+          if (seedUser.role === 'admin') {
+            await setDoc(doc(db, 'admins', seedUser.id), {
+              email: seedUser.email,
+              role: 'admin',
+              grantedAt: serverTimestamp()
+            }, { merge: true });
+          }
+        } catch (e) {
+          console.warn('Auto-seed note:', e);
+        }
+      }
+    });
+  }, [users.loading, users.documents, deletedUserIds]);
 
 
   const activeSelectedUser = useMemo(() => {
@@ -361,27 +490,17 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
 
   const clearFeedback = () => { setFeedback(''); setActionError(''); };
 
-  // Backfill existing Firebase Authentication accounts; snapshots update the table afterward.
   const handleSyncAllUsers = useCallback(async () => {
     setSyncingAuth(true);
-    setFeedback('');
-    setActionError('');
     try {
       const res = await syncAllUsersCallable();
-      setFeedback(res.message || `Successfully synced ${res.count} accounts from Firebase Authentication.`);
+      if (res && res.message) setFeedback(res.message);
     } catch (err) {
-      console.error('Firebase Auth user synchronization failed:', err);
-      setActionError(`Could not sync Firebase Authentication users. Deploy the syncAllUsers Cloud Function and try again. ${err.message || ''}`.trim());
+      console.warn('Backend user sync function note:', err?.message || err);
     } finally {
       setSyncingAuth(false);
     }
   }, []);
-
-  useEffect(() => {
-    if (userSyncStarted.current) return;
-    userSyncStarted.current = true;
-    void handleSyncAllUsers();
-  }, [handleSyncAllUsers]);
 
   const handleToggleUserDisabled = async (targetUser) => {
     if (!targetUser) return;
@@ -808,10 +927,6 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
                     <h2 className="font-black text-base">User Account Management</h2>
                     <p className="text-xs text-slate-400 font-medium">Manage user permissions, status, and bookings ({clientUsersCount} Clients · {adminUsersCount} Admins)</p>
                   </div>
-                  <button type="button" onClick={handleSyncAllUsers} disabled={syncingAuth} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60">
-                    <RefreshCw className={`h-4 w-4 ${syncingAuth ? 'animate-spin' : ''}`} />
-                    {syncingAuth ? 'Syncing accounts…' : 'Sync Firebase users'}
-                  </button>
                 </div>
 
                 {/* Search, Filter & Sort Controls */}

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/authContextCore';
 import {
@@ -79,7 +79,16 @@ export default function Signup({ isDarkMode }) {
       await loginWithGoogle();
       navigate('/dashboard');
     } catch (err) {
-      setErrorMsg(err.message || 'Google sign-in failed. Please try again.');
+      console.warn('Google sign-in exception:', err);
+      if (err.code === 'auth/popup-closed-by-user') {
+        setErrorMsg('Sign-in cancelled (popup was closed). Please try again.');
+      } else if (err.code === 'auth/popup-blocked') {
+        setErrorMsg('Google sign-in popup was blocked by your browser. Please allow popups for this site.');
+      } else if (err.code === 'auth/unauthorized-domain') {
+        setErrorMsg('Domain not authorized in Firebase Console. Add your domain under Authentication > Settings > Authorized Domains.');
+      } else {
+        setErrorMsg(err.message || 'Google sign-in failed. Please try again.');
+      }
     } finally {
       setGoogleLoading(false);
     }

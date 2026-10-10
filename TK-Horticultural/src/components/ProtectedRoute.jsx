@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/authContextCore';
+import { auth } from '../firebase';
 import { hasAdminRole } from '../lib/adminAccess';
 
 export default function ProtectedRoute({ children }) {
-  const { currentUser, loading } = useAuth();
+  const { currentUser: ctxUser, loading } = useAuth();
+  const currentUser = ctxUser || auth.currentUser;
   const location = useLocation();
   const [roleState, setRoleState] = useState({ uid: null, status: 'checking', isAdmin: false, error: '' });
 

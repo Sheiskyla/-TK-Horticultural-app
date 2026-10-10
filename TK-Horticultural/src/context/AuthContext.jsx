@@ -18,15 +18,16 @@ export const AuthProvider = ({ children }) => {
 
   const signup = async (email, password, displayName, phone = '', address = '') => {
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-    if (displayName && userCredential.user) {
-      await updateProfile(userCredential.user, { displayName });
-    }
     if (userCredential.user) {
+      setCurrentUser(userCredential.user);
+      if (displayName) {
+        updateProfile(userCredential.user, { displayName }).catch(() => {});
+      }
       const userRef = doc(db, 'users', userCredential.user.uid);
       const createdAt = userCredential.user.metadata?.creationTime
         ? Timestamp.fromDate(new Date(userCredential.user.metadata.creationTime))
         : serverTimestamp();
-      await setDoc(userRef, {
+      setDoc(userRef, {
         uid: userCredential.user.uid,
         displayName: displayName || '',
         email: email || '',
@@ -36,31 +37,57 @@ export const AuthProvider = ({ children }) => {
         createdAt,
         lastActiveAt: serverTimestamp(),
         isOnline: true,
-      }, { merge: true });
+      }, { merge: true }).catch((err) => console.warn('Signup Firestore sync note:', err));
     }
     return userCredential;
   };
 
-  const login = (email, password) => {
-    return signInWithEmailAndPassword(auth, email, password);
+  const login = async (email, password) => {
+    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    if (userCredential?.user) {
+      setCurrentUser(userCredential.user);
+    }
+    return userCredential;
   };
 
-  const loginWithGoogle = () => {
-    return signInWithPopup(auth, googleProvider);
+  const loginWithGoogle = async () => {
+    const userCredential = await signInWithPopup(auth, googleProvider);
+    if (userCredential?.user) {
+      const user = userCredential.user;
+      setCurrentUser(user);
+
+      const userRef = doc(db, 'users', user.uid);
+      const createdAt = user.metadata?.creationTime
+        ? Timestamp.fromDate(new Date(user.metadata.creationTime))
+        : serverTimestamp();
+      const providers = user.providerData ? user.providerData.map((p) => p.providerId) : ['google.com'];
+
+      setDoc(userRef, {
+        uid: user.uid,
+        displayName: user.displayName || '',
+        email: user.email || '',
+        photoURL: user.photoURL || '',
+        role: 'client',
+        createdAt,
+        lastActiveAt: serverTimestamp(),
+        isOnline: true,
+        providers
+      }, { merge: true }).catch((docErr) => {
+        console.warn('Note on Google sign-in Firestore sync:', docErr);
+      });
+    }
+    return userCredential;
   };
 
   const logout = async () => {
     if (auth.currentUser) {
-      try {
-        const userRef = doc(db, 'users', auth.currentUser.uid);
-        await setDoc(userRef, {
-          isOnline: false,
-          lastActiveAt: serverTimestamp()
-        }, { merge: true });
-      } catch (err) {
-        console.warn('Presence logout update note:', err);
-      }
+      const userRef = doc(db, 'users', auth.currentUser.uid);
+      setDoc(userRef, {
+        isOnline: false,
+        lastActiveAt: serverTimestamp()
+      }, { merge: true }).catch((err) => console.warn('Presence logout update note:', err));
     }
+    setCurrentUser(null);
     return signOut(auth);
   };
 

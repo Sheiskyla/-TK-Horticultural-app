@@ -30,18 +30,19 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly([
           'uid', 'displayName', 'email', 'phone', 'phoneNumber', 'address',
           'createdAt', 'lastActiveAt', 'isOnline', 'role', 'source',
-          'photoURL', 'disabled', 'emailVerified', 'providers'
+          'photoURL', 'disabled', 'emailVerified', 'providers', 'updatedAt'
         ])
         && request.resource.data.uid == uid
         // Clients cannot self-grant admin role on creation
-        && (request.resource.data.role == 'client' || isAdmin());
+        && (!('role' in request.resource.data) || request.resource.data.role == 'client' || isAdmin());
 
       allow update: if isAdmin() || (
         owns(uid)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'displayName', 'phone', 'phoneNumber', 'address', 'lastActiveAt', 'isOnline', 'photoURL'
+          'displayName', 'phone', 'phoneNumber', 'address', 'lastActiveAt', 'isOnline', 'photoURL', 'updatedAt', 'providers', 'email', 'createdAt', 'role'
         ])
         && request.resource.data.uid == uid
+        && (!('role' in request.resource.data) || request.resource.data.role == resource.data.role || request.resource.data.role == 'client' || isAdmin())
       );
 
       allow delete: if isAdmin();
