@@ -1,4 +1,3 @@
-import React from 'react';
 import { Link } from 'react-router-dom';
 import {
   Leaf,
@@ -12,7 +11,7 @@ import {
   Code
 } from 'lucide-react';
 
-export default function Footer({ onRequestQuote, isDarkMode }) {
+export default function Footer({ isDarkMode }) {
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };

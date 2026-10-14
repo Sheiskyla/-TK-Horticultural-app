@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/authContextCore';
-import { auth } from '../firebase';
-import { hasAdminRole } from '../lib/adminAccess';
 
 export default function ProtectedRoute({ children }) {
   const { currentUser: ctxUser, loading } = useAuth();
-  const currentUser = ctxUser || auth.currentUser;
+  const currentUser = ctxUser;
   const location = useLocation();
   const [roleState, setRoleState] = useState({ uid: null, status: 'checking', isAdmin: false, error: '' });
 
@@ -14,7 +12,7 @@ export default function ProtectedRoute({ children }) {
     let active = true;
     if (!currentUser) return undefined;
 
-    hasAdminRole(currentUser)
+    Promise.resolve(Boolean(currentUser?.is_admin))
       .then((allowed) => {
         if (!active) return;
         setRoleState({ uid: currentUser.uid, status: 'ready', isAdmin: allowed, error: '' });
@@ -50,7 +48,5 @@ export default function ProtectedRoute({ children }) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  if (roleState.status === 'error') return <div role="alert" className="min-h-screen grid place-items-center bg-slate-950 p-6 text-center text-rose-300">{roleState.error}</div>;
-  if (roleState.isAdmin) return <Navigate to="/admin/dashboard" replace />;
   return children;
 }

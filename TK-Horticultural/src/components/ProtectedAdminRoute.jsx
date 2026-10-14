@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import { auth, signOut } from '../firebase';
 import { useAuth } from '../context/authContextCore';
-import { hasAdminRole } from '../lib/adminAccess';
 import { Loader2 } from 'lucide-react';
 
 export default function ProtectedAdminRoute({ children }) {
@@ -19,31 +17,29 @@ export default function ProtectedAdminRoute({ children }) {
     if (authLoading) return;
 
     if (!currentUser) {
-      setCheckState({ checking: false, isAllowed: false, errorMessage: '' });
-      return;
+      const timer = window.setTimeout(() => {
+        if (active) {
+          setCheckState({ checking: false, isAllowed: false, errorMessage: '' });
+        }
+      }, 0);
+      return () => {
+        active = false;
+        window.clearTimeout(timer);
+      };
     }
 
-    const userEmail = (currentUser.email || '').toLowerCase().trim();
-    if (userEmail && (userEmail === 'tkhorticulture@gmail.com' || userEmail === 'gmail-tkhorticulture@gmail.com')) {
-      setCheckState({ checking: false, isAllowed: true, errorMessage: '' });
-      return;
-    }
-
-    const safetyTimeout = setTimeout(() => {
+    const checkingTimer = window.setTimeout(() => {
       if (active) {
-        setCheckState({ checking: false, isAllowed: true, errorMessage: '' });
+        setCheckState({ checking: true, isAllowed: false, errorMessage: '' });
       }
-    }, 2000);
+    }, 0);
 
-    setCheckState({ checking: true, isAllowed: false, errorMessage: '' });
-
-    hasAdminRole(currentUser)
-      .then(async (allowed) => {
-        clearTimeout(safetyTimeout);
+    Promise.resolve(Boolean(currentUser.is_admin))
+      .then((allowed) => {
+        clearTimeout(checkingTimer);
         if (!active) return;
         if (!allowed) {
           console.warn(`User ${currentUser.email} attempted to access protected admin area without admin role.`);
-          await signOut(auth);
           if (active) {
             setCheckState({
               checking: false,
@@ -57,17 +53,21 @@ export default function ProtectedAdminRoute({ children }) {
           setCheckState({ checking: false, isAllowed: true, errorMessage: '' });
         }
       })
-      .catch(async (error) => {
-        clearTimeout(safetyTimeout);
+      .catch((error) => {
+        clearTimeout(checkingTimer);
         console.error('Failed to verify administrator role:', error);
         if (active) {
-          setCheckState({ checking: false, isAllowed: true, errorMessage: '' });
+          setCheckState({
+            checking: false,
+            isAllowed: false,
+            errorMessage: 'Unable to verify administrator role. Please refresh and try again.'
+          });
         }
       });
 
     return () => {
       active = false;
-      clearTimeout(safetyTimeout);
+      clearTimeout(checkingTimer);
     };
   }, [currentUser, authLoading]);
 

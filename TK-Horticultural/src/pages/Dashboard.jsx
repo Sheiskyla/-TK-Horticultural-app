@@ -28,13 +28,9 @@ import {
   ChevronRight,
   Sparkles
 } from 'lucide-react';
-import {
-  collection, doc, query, where, onSnapshot, runTransaction,
-  writeBatch, setDoc, serverTimestamp
-} from 'firebase/firestore';
-import { auth, db, signOut } from '../firebase';
 import { uploadMediaFile } from '../lib/uploadMediaFile';
-import useDateAvailability, { BOOKING_SLOTS, isSlotAvailable, weekdayAvailabilityId } from '../hooks/useDateAvailability';
+import useDateAvailability, { BOOKING_SLOTS } from '../hooks/useDateAvailability';
+import laravelApi from '../services/laravelApi';
 
 const todayStr = () => {
   const d = new Date();
@@ -59,8 +55,7 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
   const [saving, setSaving] = useState(false);
 
   const [bookings, setBookings] = useState(null);
-  const [takenSlots, setTakenSlots] = useState([]);
-  const { dateSettings: selectedDateAvailability, weeklySettings: selectedWeekAvailability, loading: availabilityLoading, error: availabilityError } = useDateAvailability(bookingDate);
+  const { dateSettings: selectedDateAvailability, loading: availabilityLoading, error: availabilityError } = useDateAvailability(bookingDate);
   const [profile, setProfile] = useState({ phone: '', address: '' });
   const [profileSaved, setProfileSaved] = useState(false);
 
@@ -76,48 +71,33 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
 
   const timeSlots = baseSlots.map((s) => ({
     ...s,
-    status: takenSlots.includes(s.id)
-      ? 'Booked'
-      : !isSlotAvailable(selectedDateAvailability, selectedWeekAvailability, s.field)
-        ? 'Unavailable'
-        : 'Available'
+    status: selectedDateAvailability?.[s.id] || 'Available'
   }));
 
   useEffect(() => {
     if (!uid) return;
-    const q = query(collection(db, 'bookings'), where('userId', '==', uid));
-    return onSnapshot(
-      q,
-      (snap) => {
-        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        rows.sort((a, b) => (b.date + b.slot).localeCompare(a.date + a.slot));
-        setBookings(rows);
-      },
-      (err) => { console.error(err); setBookings([]); }
-    );
+    let active = true;
+    laravelApi.getUserBookings().then((data) => {
+      if (active) setBookings(data.data || []);
+    }).catch((err) => {
+      console.error('Unable to load bookings:', err);
+      if (active) setBookings([]);
+    });
+    return () => { active = false; };
   }, [uid]);
 
   useEffect(() => {
-    const q = query(collection(db, 'slots'), where('date', '==', bookingDate));
-    return onSnapshot(q, (snap) => setTakenSlots(snap.docs.map((d) => d.data().slotId)), (e) => console.error(e));
-  }, [bookingDate]);
-
-  useEffect(() => {
     const y = calMonth.getFullYear();
-    const m = String(calMonth.getMonth() + 1).padStart(2, '0');
-    const q = query(
-      collection(db, 'slots'),
-      where('date', '>=', `${y}-${m}-01`),
-      where('date', '<=', `${y}-${m}-31`)
-    );
-    return onSnapshot(q, (snap) => setMonthSlots(snap.docs.map((d) => d.data())), (e) => console.error(e));
+    let active = true;
+    laravelApi.getMonthlyAvailability({ year: y, month: calMonth.getMonth() + 1 })
+      .then((data) => { if (active) setMonthSlots(Object.values(data)); })
+      .catch((err) => console.error('Unable to load monthly availability:', err));
+    return () => { active = false; };
   }, [calMonth]);
 
   useEffect(() => {
     if (!uid) return;
-    return onSnapshot(doc(db, 'users', uid), (snap) => {
-      if (snap.exists()) setProfile((p) => ({ ...p, ...snap.data() }));
-    });
+    laravelApi.getProfile().then(setProfile).catch((err) => console.error('Unable to load profile:', err));
   }, [uid]);
 
   const stats = useMemo(() => {
@@ -132,14 +112,8 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
 
   const handleSignOut = async () => {
     try {
-      if (uid) {
-        setDoc(doc(db, 'users', uid), {
-          uid,
-          isOnline: false,
-          lastActiveAt: serverTimestamp(),
-        }, { merge: true }).catch(() => {});
-      }
-      await signOut(auth);
+      await laravelApi.logout().catch(() => {});
+      await laravelApi.logout();
       navigate('/login');
     } catch (err) {
       console.error('Sign out error:', err);
@@ -176,45 +150,22 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
     setBookingError('');
     setBookingConfirmed(false);
 
-    const slotRef = doc(db, 'slots', `${bookingDate}_${chosen.id}`);
-    const availabilityRef = doc(db, 'availability', bookingDate);
-    const weeklyAvailabilityRef = doc(db, 'availability_defaults', weekdayAvailabilityId(bookingDate));
-    const bookingRef = doc(collection(db, 'bookings'));
     try {
-      const uploadedJobFiles = await Promise.all(jobFiles.map((file) => uploadMediaFile(
+      const media = await Promise.all(jobFiles.map((file) => uploadMediaFile(
         file.file,
-        `users/${uid}/bookings/${bookingRef.id}/${Date.now()}_${file.name.replace(/[^\w.-]/g, '_')}`
+        `users/${uid}/bookings/${Date.now()}_${file.name.replace(/[^\w.-]/g, '_')}`
       )));
-      await runTransaction(db, async (tx) => {
-        const existing = await tx.get(slotRef);
-        if (existing.exists()) throw new Error('SLOT_TAKEN');
-        const availability = await tx.get(availabilityRef);
-        const weeklyAvailability = await tx.get(weeklyAvailabilityRef);
-        if (!isSlotAvailable(
-          availability.exists() ? availability.data() : null,
-          weeklyAvailability.exists() ? weeklyAvailability.data() : null,
-          chosen.field
-        )) {
-          throw new Error('SLOT_UNAVAILABLE');
-        }
-        tx.set(slotRef, { date: bookingDate, slotId: chosen.id, userId: uid, createdAt: serverTimestamp() });
-        tx.set(bookingRef, {
-          userId: uid,
-          customerName: currentUser?.displayName || '',
-          customerEmail: currentUser?.email || '',
-          ref: 'TK-' + Math.floor(100000 + Math.random() * 900000),
-          service: bookingService,
-          division: bookingService,
-          date: bookingDate,
-          slotId: chosen.id,
-          slot: chosen.time,
-          address: trimmedLocation,
-          location: trimmedLocation,
-          jobDetails: trimmedDetails,
-          jobFiles: uploadedJobFiles,
-          status: 'Pending Quote',
-          createdAt: serverTimestamp()
-        });
+      await laravelApi.createBooking({
+        division: bookingService.toLowerCase().includes('clean') ? 'cleaning' : bookingService.toLowerCase().includes('waste') ? 'waste' : 'horticulture',
+        service: bookingService,
+        notes: trimmedDetails,
+        date: bookingDate,
+        slot_id: chosen.id,
+        address: trimmedLocation,
+        client_name: currentUser?.displayName || '',
+        client_email: currentUser?.email || '',
+        client_phone: profile.phone || '',
+        media,
       });
       setBookingConfirmed(true);
       jobFiles.forEach((file) => file.preview && URL.revokeObjectURL(file.preview));
@@ -241,10 +192,8 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
     if (!b) return;
     setCancelling(true);
     try {
-      const batch = writeBatch(db);
-      batch.update(doc(db, 'bookings', b.id), { status: 'Cancelled' });
-      batch.delete(doc(db, 'slots', `${b.date}_${b.slotId}`));
-      await batch.commit();
+      await laravelApi.cancelBooking(b.id);
+      setBookings((items) => items.filter((item) => item.id !== b.id));
       setCancelTarget(null);
     } catch (e) {
       console.error(e);
@@ -255,13 +204,11 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
 
   const saveProfile = async () => {
     try {
-      await setDoc(doc(db, 'users', uid), {
-        uid,
-        email: currentUser?.email || '',
-        displayName: currentUser?.displayName || '',
+      await laravelApi.updateProfile({
+        name: currentUser?.displayName || profile.name,
         phone: profile.phone,
         address: profile.address
-      }, { merge: true });
+      });
       setProfileSaved(true);
       setTimeout(() => setProfileSaved(false), 2500);
     } catch (e) {

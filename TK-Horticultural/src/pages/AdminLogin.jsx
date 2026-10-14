@@ -1,48 +1,24 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { auth, sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from '../firebase';
-import { hasAdminRole } from '../lib/adminAccess';
+import { useAuth } from '../context/authContextCore';
 import {
-  ShieldCheck,
-  Lock,
-  Mail,
-  Eye,
-  EyeOff,
-  CheckCircle2,
-  ArrowRight,
-  Home,
-  ShieldAlert,
-  Sun,
-  Moon,
-  Loader2,
-  KeyRound,
-  X
+  ShieldCheck, Lock, Mail, Eye, EyeOff, CheckCircle2, ArrowRight,
+  Home, ShieldAlert, Sun, Moon, Loader2, KeyRound, X
 } from 'lucide-react';
 
-const BG_IMAGE =
-  'https://images.unsplash.com/photo-1585320806297-9794b3e4eeae?auto=format&fit=crop&w=1920&q=80';
-
-const ERROR_MESSAGES = {
-  'auth/invalid-email': 'Enter a valid email address.',
-  'auth/user-not-found': 'Incorrect email or password. Please verify your admin account exists in Firebase.',
-  'auth/wrong-password': 'Incorrect password. Click "Forgot password?" to reset it.',
-  'auth/invalid-credential': 'Incorrect email or password. Please check your credentials.',
-  'auth/user-disabled': 'This account has been disabled. Contact system support.',
-  'auth/too-many-requests': 'Too many failed login attempts. Please wait a few minutes.',
-  'auth/network-request-failed': 'Network error. Please check your internet connection.'
-};
+const BG_IMAGE = 'https://images.unsplash.com/photo-1585320806297-9794b3e4eeae?auto=format&fit=crop&w=1920&q=80';
 
 export default function AdminLogin({ isDarkMode, setIsDarkMode }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const { currentUser, loading: authLoading, login } = useAuth();
   const [email, setEmail] = useState('tkhorticulture@gmail.com');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState(location.state?.message || '');
   const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
-
   const [showForgotModal, setShowForgotModal] = useState(false);
   const [resetEmail, setResetEmail] = useState('tkhorticulture@gmail.com');
   const [resetLoading, setResetLoading] = useState(false);
@@ -50,95 +26,34 @@ export default function AdminLogin({ isDarkMode, setIsDarkMode }) {
   const [resetError, setResetError] = useState('');
 
   useEffect(() => {
-    let active = true;
-    let initialCheckDone = false;
-
-    const unsubscribe = auth.onAuthStateChanged(async (user) => {
-      if (!active || initialCheckDone) return;
-      initialCheckDone = true;
-
-      if (user) {
-        try {
-          const isAdmin = await hasAdminRole(user);
-          if (active && isAdmin) {
-            navigate('/admin/dashboard', { replace: true });
-            return;
-          }
-          await signOut(auth);
-        } catch (err) {
-          console.error('Session check verification error:', err);
-          try {
-            await signOut(auth);
-          } catch (soErr) {
-            console.error('Sign out error:', soErr);
-          }
-          if (active) setErrorMsg('Session verification failed. Please log in.');
-        }
-      }
-
-      if (active) setCheckingSession(false);
-    });
-
-    return () => {
-      active = false;
-      unsubscribe();
-    };
-  }, [navigate]);
+    if (authLoading) return;
+    if (currentUser?.is_admin) navigate('/admin/dashboard', { replace: true });
+    queueMicrotask(() => setCheckingSession(false));
+  }, [authLoading, currentUser, navigate]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (loading) return;
-
     setErrorMsg('');
     setSuccessMsg('');
-
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail || !password) {
       setErrorMsg('Please enter both email and password.');
       return;
     }
-
     setLoading(true);
-
     try {
-      console.log(`Attempting admin sign-in for: ${cleanEmail}`);
-      const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, password);
-      const user = userCredential.user;
-
-      console.log('Firebase Auth sign-in successful. Verifying role...');
-      let isAdmin = false;
-      try {
-        isAdmin = await hasAdminRole(user);
-      } catch (roleErr) {
-        console.error('Role verification error:', roleErr);
-        await signOut(auth);
-        setPassword('');
-        setErrorMsg('Admin privilege verification failed. Please try again.');
-        return;
-      }
-
-      if (!isAdmin) {
-        console.warn(`User ${user.email} signed in but does not have admin role.`);
-        await signOut(auth);
-        setPassword('');
+      const response = await login(cleanEmail, password);
+      if (!response.user?.is_admin) {
         setErrorMsg('Access denied. Account does not have administrator privileges.');
         return;
       }
-
       setPassword('');
       setSuccessMsg('Authentication successful. Redirecting to console…');
       navigate('/admin/dashboard', { replace: true });
     } catch (error) {
-      console.error('Admin login failed:', error.code, error.message);
-      if (auth.currentUser) {
-        try {
-          await signOut(auth);
-        } catch (soErr) {
-          console.error('Post-error signout failed:', soErr);
-        }
-      }
       setPassword('');
-      setErrorMsg(ERROR_MESSAGES[error.code] || error.message || 'Sign in failed. Check your credentials.');
+      setErrorMsg(error.message || 'Sign in failed. Check your credentials.');
     } finally {
       setLoading(false);
     }
@@ -146,26 +61,9 @@ export default function AdminLogin({ isDarkMode, setIsDarkMode }) {
 
   const handleSendResetEmail = async (e) => {
     e.preventDefault();
-    setResetError('');
+    setResetError('Password reset is not configured yet. Please contact support.');
     setResetSuccess('');
-
-    const cleanEmail = resetEmail.trim().toLowerCase();
-    if (!cleanEmail) {
-      setResetError('Please enter your administrator email.');
-      return;
-    }
-
-    setResetLoading(true);
-
-    try {
-      await sendPasswordResetEmail(auth, cleanEmail);
-      setResetSuccess(`Password reset link sent to ${cleanEmail}. Check your inbox.`);
-    } catch (err) {
-      console.error('Password reset error:', err);
-      setResetError(ERROR_MESSAGES[err.code] || err.message || 'Failed to send reset link.');
-    } finally {
-      setResetLoading(false);
-    }
+    setResetLoading(false);
   };
 
   const inputClass = `w-full pl-10 py-3.5 rounded-xl border text-sm font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500 transition-colors ${
@@ -421,7 +319,7 @@ export default function AdminLogin({ isDarkMode, setIsDarkMode }) {
             </div>
 
             <p className="text-xs text-slate-400 leading-relaxed">
-              Enter your admin email address below. We will send a secure password reset link directly from Firebase Auth.
+              Enter your admin email address below. Password reset is handled by support.
             </p>
 
             {resetError && (

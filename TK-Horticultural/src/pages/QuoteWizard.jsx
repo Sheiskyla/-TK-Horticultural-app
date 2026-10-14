@@ -1,9 +1,8 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, doc, onSnapshot, query, runTransaction, serverTimestamp, where } from 'firebase/firestore';
-import { db } from '../firebase';
 import { uploadMediaFile } from '../lib/uploadMediaFile';
-import useDateAvailability, { BOOKING_SLOTS, isSlotAvailable, weekdayAvailabilityId } from '../hooks/useDateAvailability';
+import useDateAvailability, { BOOKING_SLOTS } from '../hooks/useDateAvailability';
+import laravelApi from '../services/laravelApi';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import { 
@@ -29,10 +28,12 @@ export default function QuoteWizard({ isDarkMode, setIsDarkMode, currentUser }) 
   const [currentStep, setCurrentStep] = useState(1);
 
   const [selectedServices, setSelectedServices] = useState([]);
-  const [bookingDate, setBookingDate] = useState(() => {
-    const today = new Date();
-    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-  });
+  const todayStr = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  const [bookingDate, setBookingDate] = useState(() => todayStr());
   const [selectedSlot, setSelectedSlot] = useState(null);
 
   const [address, setAddress] = useState('');
@@ -46,8 +47,7 @@ export default function QuoteWizard({ isDarkMode, setIsDarkMode, currentUser }) 
 
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [bookingRef, setBookingRef] = useState('');
-  const [slotReservations, setSlotReservations] = useState([]);
-  const { dateSettings, weeklySettings, loading: availabilityLoading, error: availabilityError } = useDateAvailability(bookingDate);
+  const { dateSettings, loading: availabilityLoading, error: availabilityError } = useDateAvailability(bookingDate);
   const [submitError, setSubmitError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -91,22 +91,8 @@ export default function QuoteWizard({ isDarkMode, setIsDarkMode, currentUser }) 
   const baseTimeSlots = BOOKING_SLOTS.map((slot) => ({ id: slot.id, field: slot.field, time: slot.label }));
   const timeSlots = baseTimeSlots.map((slot) => ({
     ...slot,
-    status: slotReservations.includes(slot.id)
-      ? 'Booked'
-      : !isSlotAvailable(dateSettings, weeklySettings, slot.field)
-        ? 'Unavailable'
-        : 'Available'
+    status: dateSettings?.[slot.id] || 'Available'
   }));
-
-  React.useEffect(() => {
-    const reservationsQuery = query(collection(db, 'slots'), where('date', '==', bookingDate));
-    const unsubscribeReservations = onSnapshot(
-      reservationsQuery,
-      (snapshot) => setSlotReservations(snapshot.docs.map((item) => item.data().slotId)),
-      (error) => console.error('Unable to load booked slots:', error)
-    );
-    return () => unsubscribeReservations();
-  }, [bookingDate]);
 
   const handleServiceToggle = (item) => {
     if (selectedServices.includes(item)) {
@@ -151,59 +137,25 @@ export default function QuoteWizard({ isDarkMode, setIsDarkMode, currentUser }) 
     setIsSubmitting(true);
     setSubmitError('');
     const refCode = `TK-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
-    const bookingDocument = doc(collection(db, 'bookings'));
-    const quoteDocument = doc(collection(db, 'quotes'));
     const chosen = baseTimeSlots.find((slot) => slot.time === selectedSlot);
 
     try {
       const attachments = await Promise.all(uploadedFiles.map(({ file }) => uploadMediaFile(
         file,
-        `users/${currentUser.uid}/quotes/${quoteDocument.id}/${Date.now()}_${file.name.replace(/[^\w.-]/g, '_')}`
+        `users/${currentUser.uid}/quotes/${Date.now()}_${file.name.replace(/[^\w.-]/g, '_')}`
       )));
-      await runTransaction(db, async (transaction) => {
-        const reservationRef = doc(db, 'slots', `${bookingDate}_${chosen.id}`);
-        const availabilityRef = doc(db, 'availability', bookingDate);
-        const weeklyAvailabilityRef = doc(db, 'availability_defaults', weekdayAvailabilityId(bookingDate));
-        const reservation = await transaction.get(reservationRef);
-        const settings = await transaction.get(availabilityRef);
-        const weeklySettingsSnapshot = await transaction.get(weeklyAvailabilityRef);
-        if (reservation.exists()) throw new Error('SLOT_TAKEN');
-        if (!isSlotAvailable(
-          settings.exists() ? settings.data() : null,
-          weeklySettingsSnapshot.exists() ? weeklySettingsSnapshot.data() : null,
-          chosen.field
-        )) throw new Error('SLOT_UNAVAILABLE');
-
-        const common = {
-          userId: currentUser.uid,
-          customerName: contactName.trim(),
-          customerEmail: contactEmail.trim(),
-          customerPhone: contactPhone.trim(),
-          ref: refCode,
-          service: selectedServices.join(', '),
-          date: bookingDate,
-          slotId: chosen.id,
-          slot: chosen.time,
-          address: address.trim(),
-          jobDetails: jobNotes.trim(),
-          attachments,
-          createdAt: serverTimestamp()
-        };
-        transaction.set(reservationRef, {
-          date: bookingDate,
-          slotId: chosen.id,
-          userId: currentUser.uid,
-          createdAt: serverTimestamp()
-        });
-        transaction.set(bookingDocument, { ...common, status: 'Pending Quote' });
-        transaction.set(quoteDocument, {
-          ...common,
-          requestedServices: selectedServices,
-          requestedDate: bookingDate,
-          requestedSlot: chosen.time,
-          estimatedBudget: estimatedBudget ? Number(estimatedBudget) : null,
-          status: 'New'
-        });
+      await laravelApi.createBooking({
+        division: selectedServices.join(' ').toLowerCase().includes('clean') ? 'cleaning' : selectedServices.join(' ').toLowerCase().includes('waste') ? 'waste' : 'horticulture',
+        service: selectedServices.join(', '),
+        sub_services: selectedServices,
+        notes: `${jobNotes.trim()}${estimatedBudget ? `\nEstimated budget: ${estimatedBudget}` : ''}`,
+        date: bookingDate,
+        slot_id: chosen.id,
+        address: address.trim(),
+        client_name: contactName.trim(),
+        client_email: contactEmail.trim(),
+        client_phone: contactPhone.trim(),
+        media: attachments,
       });
       setBookingRef(refCode);
       setIsSubmitted(true);
@@ -437,7 +389,7 @@ ${selectedServices.length > 0 ? selectedServices.map(s => `• ${s}`).join('\n')
                       </label>
                       <input
                         type="date"
-                        min={new Date().toLocaleDateString('en-CA')}
+                        min={todayStr()}
                         value={bookingDate}
                         onChange={(e) => {
                           setBookingDate(e.target.value);

@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
-import { auth, signOut } from '../firebase';
+import { useAuth } from '../context/authContextCore';
 import {
   Phone,
   MessageSquare,
@@ -19,6 +19,7 @@ import {
 
 export default function Navbar({ onRequestQuote, isDarkMode, onToggleDarkMode, currentUser }) {
   const navigate = useNavigate();
+  const { logout } = useAuth();
   const drawerRef = useRef(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
@@ -70,12 +71,22 @@ export default function Navbar({ onRequestQuote, isDarkMode, onToggleDarkMode, c
 
   const handleSignOut = async () => {
     try {
-      await signOut(auth);
+      await logout();
       setShowProfileMenu(false);
       setIsMobileMenuOpen(false);
       navigate('/login');
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleGetQuote = () => {
+    setIsMobileMenuOpen(false);
+    setShowProfileMenu(false);
+    if (currentUser) {
+      navigate('/dashboard');
+    } else {
+      navigate('/signup');
     }
   };
 
@@ -185,7 +196,7 @@ export default function Navbar({ onRequestQuote, isDarkMode, onToggleDarkMode, c
 
               <button
                 type="button"
-                onClick={onRequestQuote}
+                onClick={handleGetQuote}
                 className="px-4 py-2.5 rounded-xl text-xs font-black text-slate-950 bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-400 hover:from-emerald-300 hover:to-teal-200 transition-all shadow-md flex items-center gap-1.5 min-h-[44px] whitespace-nowrap"
               >
                 <Sparkles className="w-4 h-4 text-slate-950" />
@@ -378,10 +389,7 @@ export default function Navbar({ onRequestQuote, isDarkMode, onToggleDarkMode, c
               <div className="mt-6 space-y-3">
                 <button
                   type="button"
-                  onClick={() => {
-                    setIsMobileMenuOpen(false);
-                    if (onRequestQuote) onRequestQuote();
-                  }}
+                  onClick={handleGetQuote}
                   className="w-full min-h-[48px] rounded-xl bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-400 text-slate-950 font-black text-sm shadow-lg"
                 >
                   Get a Free Quote

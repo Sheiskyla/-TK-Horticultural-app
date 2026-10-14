@@ -1,27 +1,21 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState, Component } from 'react';
+import { useEffect, useMemo, useState, Component } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  addDoc, collection, deleteDoc, doc, serverTimestamp, setDoc, updateDoc, writeBatch
-} from 'firebase/firestore';
-import { deleteObject, ref } from 'firebase/storage';
-import {
-  CalendarDays, Check, CheckCheck, Clock3, Image as ImageIcon, LayoutDashboard, LogOut,
+  CalendarDays, CheckCheck, Clock3, Image as ImageIcon, LayoutDashboard, LogOut,
   Mail, MessageSquare, Search, ShieldCheck, Trash2, Users, X, Sun, Moon, Loader2,
-  Upload, AlertTriangle, Sparkles, UserCheck, Shield, RefreshCw, KeyRound, Ban, UserX,
-  ExternalLink, ChevronLeft, ChevronRight, UserPlus, Filter, CheckCircle2
+  Upload, AlertTriangle, UserCheck, RefreshCw, Ban, UserX,
+  ExternalLink, CheckCircle2, UserPlus
 } from 'lucide-react';
-import { auth, db, signOut, storage, sendPasswordResetEmail } from '../firebase';
-import useFirestoreCollection from '../hooks/useFirestoreCollection';
 import { BOOKING_SLOTS, isSlotAvailable, weekdayAvailabilityId } from '../hooks/useDateAvailability';
-import { uploadMediaFile } from '../lib/uploadMediaFile';
-import { ADMIN_EMAILS } from '../lib/adminAccess';
 import {
-  syncAllUsersCallable,
-  setUserDisabledCallable,
-  deleteUserAccountCallable,
-  sendPasswordResetCallable,
-  setAdminRoleCallable
-} from '../lib/adminFunctions';
+  useLaravelAdminBookings,
+  useLaravelAdminEnquiries,
+  useLaravelAvailability,
+  useLaravelGallery,
+  useLaravelUsers,
+} from '../hooks/useLaravelApi';
+import { laravelApi } from '../services/laravelApi';
+import { useAuth } from '../context/authContextCore';
 
 const NAV_ITEMS = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -29,63 +23,11 @@ const NAV_ITEMS = [
   { id: 'availability', label: 'Availability', icon: Clock3 },
   { id: 'enquiries', label: 'Enquiries', icon: MessageSquare },
   { id: 'gallery', label: 'Gallery', icon: ImageIcon },
+  { id: 'laravel-users', label: 'Laravel Users', icon: Users },
 ];
 
 const BOOKING_STATUS_OPTIONS = [
   'All statuses', 'Pending', 'Pending Quote', 'Approved', 'Confirmed', 'Declined', 'Completed', 'Cancelled'
-];
-
-const CONSOLE_USERS_SEED = [
-  {
-    id: 'WaUsxFvlE1gsTR8syWLFXv6O',
-    uid: 'WaUsxFvlE1gsTR8syWLFXv6O',
-    email: 'tkhorticulture@gmail.com',
-    displayName: 'Administrator',
-    role: 'admin',
-    createdAt: new Date('2026-10-09T19:15:00Z'),
-    disabled: false,
-    providers: ['password']
-  },
-  {
-    id: 'Ds09PLSB7VOwLIKBn4pUhM',
-    uid: 'Ds09PLSB7VOwLIKBn4pUhM',
-    email: 'judahk065@gmail.com',
-    displayName: 'Judah K',
-    role: 'client',
-    createdAt: new Date('2026-10-05T12:00:00Z'),
-    disabled: false,
-    providers: ['google.com']
-  },
-  {
-    id: 'PdZqVKouQjYHO4K6VABiWUf',
-    uid: 'PdZqVKouQjYHO4K6VABiWUf',
-    email: 'olabayoemmanuel@gmail.com',
-    displayName: 'Olabayo Emmanuel',
-    role: 'client',
-    createdAt: new Date('2026-10-02T12:00:00Z'),
-    disabled: false,
-    providers: ['google.com']
-  },
-  {
-    id: 'Uas9Zifi6NSOM4e6GQ4Ooncj',
-    uid: 'Uas9Zifi6NSOM4e6GQ4Ooncj',
-    email: 'ajewoleayomide386@gmail.com',
-    displayName: 'Ajewole Ayomide',
-    role: 'client',
-    createdAt: new Date('2026-10-09T12:00:00Z'),
-    disabled: false,
-    providers: ['google.com']
-  },
-  {
-    id: 'jbp5nZHDTONGaP24b32ROj9',
-    uid: 'jbp5nZHDTONGaP24b32ROj9',
-    email: 'ajewoleadeola386@gmail.com',
-    displayName: 'Ajewole Adeola',
-    role: 'client',
-    createdAt: new Date('2026-09-30T12:00:00Z'),
-    disabled: false,
-    providers: ['google.com']
-  }
 ];
 
 function dateString(date) {
@@ -104,52 +46,28 @@ function clientName(booking) {
 
 function isUserActive(user, now) {
   if (!user) return false;
-  const currentUid = auth.currentUser?.uid;
-  const currentEmail = auth.currentUser?.email?.toLowerCase();
-  
-  if (currentUid && ((user.id && user.id === currentUid) || (user.uid && user.uid === currentUid))) {
-    return true;
-  }
-  if (currentEmail && user.email && user.email.toLowerCase() === currentEmail) {
-    return true;
-  }
-
-  const lastActiveAt = user.lastActiveAt?.toDate
-    ? user.lastActiveAt.toDate().getTime()
-    : new Date(user.lastActiveAt || 0).getTime();
+  // Laravel users don't have real-time presence, check last login
+  const lastLoginAt = user.last_login_at || user.last_login || user.updated_at || 0;
+  const lastActiveAt = new Date(lastLoginAt).getTime();
   const age = now - lastActiveAt;
-  return (user.isOnline === true || (Number.isFinite(lastActiveAt) && age >= 0 && age <= 300_000));
+  return Number.isFinite(lastActiveAt) && age >= 0 && age <= 300_000;
 }
 
 function isCreatedThisWeek(createdAt) {
   if (!createdAt) return false;
-  const date = createdAt?.toDate ? createdAt.toDate() : new Date(createdAt);
+  const date = new Date(createdAt);
   const diffTime = Math.abs(new Date() - date);
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   return diffDays <= 7;
 }
 
-function getUserRole(usr, adminUidsSet) {
+function getUserRole(usr) {
   if (!usr) return 'Client';
-  const email = String(usr.email || '').toLowerCase().trim();
-  const userId = usr.uid || usr.id;
-  if (ADMIN_EMAILS.includes(email) || usr.role === 'admin' || (userId && adminUidsSet && adminUidsSet.has(userId))) {
-    return 'Admin';
-  }
-  return 'Client';
+  return usr.is_admin ? 'Admin' : 'Client';
 }
 
-function getDisabledStatus(usr, disabledMap) {
+function getDisabledStatus(usr) {
   if (!usr) return false;
-  if (disabledMap && typeof disabledMap === 'object') {
-    const uId = usr.id || usr.uid;
-    const uUid = usr.uid;
-    const uEmail = String(usr.email || '').toLowerCase().trim();
-
-    if (uId && disabledMap[uId] !== undefined) return Boolean(disabledMap[uId]);
-    if (uUid && disabledMap[uUid] !== undefined) return Boolean(disabledMap[uUid]);
-    if (uEmail && disabledMap[uEmail] !== undefined) return Boolean(disabledMap[uEmail]);
-  }
   return usr.disabled === true;
 }
 
@@ -212,7 +130,9 @@ class AdminErrorBoundary extends Component {
       localStorage.removeItem('tk_deleted_user_ids');
       localStorage.removeItem('tk_deleted_user_emails');
       localStorage.removeItem('tk_disabled_users_map');
-    } catch (e) {}
+    } catch {
+      // Ignore unavailable local storage during recovery.
+    }
     this.setState({ hasError: false, error: null });
     window.location.reload();
   };
@@ -247,14 +167,14 @@ class AdminErrorBoundary extends Component {
 }
 
 function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
+  const { currentUser } = useAuth();
   const navigate = useNavigate();
-  const userSyncStarted = useRef(false);
   const [activeSection, setActiveSection] = useState('overview');
   
   const [userSearch, setUserSearch] = useState('');
   const [userStatusFilter, setUserStatusFilter] = useState('All');
   const [userRoleFilter, setUserRoleFilter] = useState('All');
-  const [userSortOrder, setUserSortOrder] = useState('newest');
+  const [userSortOrder] = useState('newest');
   const [pageLimit, setPageLimit] = useState(10);
 
   const [bookingSearch, setBookingSearch] = useState('');
@@ -269,7 +189,6 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
   const [deleteBookingsOption, setDeleteBookingsOption] = useState(true);
   
   const [busyKey, setBusyKey] = useState('');
-  const [syncingAuth, setSyncingAuth] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [actionError, setActionError] = useState('');
 
@@ -281,24 +200,6 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
     } catch { return {}; }
   });
 
-  const [deletedUserIds, setDeletedUserIds] = useState(() => {
-    try {
-      const raw = localStorage.getItem('tk_deleted_user_ids');
-      const parsed = raw ? JSON.parse(raw) : [];
-      const list = Array.isArray(parsed) ? parsed : [];
-      return list.filter((id) => id !== 'Uas9Zifi6NSOM4e6GQ4Ooncj' && id !== 'BAB6fyI9t7fd1K82RmJbhDN8');
-    } catch { return []; }
-  });
-
-  const [deletedEmails, setDeletedEmails] = useState(() => {
-    try {
-      const raw = localStorage.getItem('tk_deleted_user_emails');
-      const parsed = raw ? JSON.parse(raw) : [];
-      const list = Array.isArray(parsed) ? parsed : [];
-      return list.filter((e) => String(e || '').toLowerCase().trim() !== 'ajewoleayomide386@gmail.com');
-    } catch { return []; }
-  });
-
   const [galleryFiles, setGalleryFiles] = useState([]);
   const [galleryTitle, setGalleryTitle] = useState('');
   const [galleryCategory, setGalleryCategory] = useState('Horticultural');
@@ -306,7 +207,7 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
   const [uploadProgress, setUploadProgress] = useState({});
   const [uploading, setUploading] = useState(false);
   const [editingGallery, setEditingGallery] = useState({});
-  const [clock, setClock] = useState(Date.now());
+  const [clock, setClock] = useState(() => new Date().getTime());
 
   useEffect(() => {
     const interval = window.setInterval(() => setClock(Date.now()), 15_000);
@@ -325,126 +226,61 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
     return () => clearTimeout(timer);
   }, [actionError]);
 
-  const bookings = useFirestoreCollection('bookings');
-  const users = useFirestoreCollection('users');
-  const adminsColl = useFirestoreCollection('admins');
-  const quotes = useFirestoreCollection('quotes');
-  const enquiries = useFirestoreCollection('enquiries');
-  const gallery = useFirestoreCollection('gallery');
-  const dailyAvailability = useFirestoreCollection('availability');
-  const weeklyAvailability = useFirestoreCollection('availability_defaults');
+  const bookings = useLaravelAdminBookings();
+  const enquiries = useLaravelAdminEnquiries();
+  const availability = useLaravelAvailability(availabilityDate);
 
-  const adminUidsSet = useMemo(() => {
-    const list = Array.isArray(adminsColl?.documents) ? adminsColl.documents : [];
-    return new Set(list.map((a) => a.id).filter(Boolean));
-  }, [adminsColl.documents]);
-
-  const allUsersCombined = useMemo(() => {
-    const userDocs = Array.isArray(users?.documents) ? users.documents : [];
-    const existingEmails = new Set(userDocs.map((u) => (u?.email || '').toLowerCase().trim()).filter(Boolean));
-    const safeDeletedIds = Array.isArray(deletedUserIds) ? deletedUserIds : [];
-    const deletedIdSet = new Set(safeDeletedIds);
-
-    const combined = userDocs
-      .filter((u) => {
-        if (!u) return false;
-        const uId = u.id || u.uid;
-        return (!uId || !deletedIdSet.has(uId)) && u.deleted !== true;
-      })
-      .map((u) => {
-        return { ...u, disabled: getDisabledStatus(u, disabledMap) };
-      });
-
-    CONSOLE_USERS_SEED.forEach((seedUser) => {
-      if (!seedUser || !seedUser.email) return;
-      const sEmail = seedUser.email.toLowerCase().trim();
-      if (!existingEmails.has(sEmail) && !deletedIdSet.has(seedUser.id)) {
-        combined.push({ ...seedUser, disabled: getDisabledStatus(seedUser, disabledMap) });
-        existingEmails.add(sEmail);
-      }
-    });
-
-    return combined;
-  }, [users.documents, deletedUserIds, disabledMap]);
-
-  useEffect(() => {
-    if (users.loading || !Array.isArray(users.documents)) return;
-    const existingEmails = new Set(users.documents.map((u) => (u?.email || '').toLowerCase().trim()).filter(Boolean));
-    const safeDeletedIds = Array.isArray(deletedUserIds) ? deletedUserIds : [];
-    const deletedIdSet = new Set(safeDeletedIds);
-
-    CONSOLE_USERS_SEED.forEach(async (seedUser) => {
-      if (!seedUser || !seedUser.email) return;
-      const sEmail = seedUser.email.toLowerCase().trim();
-      if (!existingEmails.has(sEmail) && !deletedIdSet.has(seedUser.id)) {
-        try {
-          await setDoc(doc(db, 'users', seedUser.id), {
-            uid: seedUser.id,
-            email: seedUser.email,
-            displayName: seedUser.displayName,
-            role: seedUser.role,
-            source: 'console',
-            disabled: false,
-            createdAt: serverTimestamp(),
-            lastSignInAt: serverTimestamp(),
-            isOnline: seedUser.email === auth.currentUser?.email
-          }, { merge: true });
-
-          if (seedUser.role === 'admin') {
-            await setDoc(doc(db, 'admins', seedUser.id), {
-              email: seedUser.email,
-              role: 'admin',
-              grantedAt: serverTimestamp()
-            }, { merge: true });
-          }
-        } catch (e) {
-          console.warn('Auto-seed note:', e);
-        }
-      }
-    });
-  }, [users.loading, users.documents, deletedUserIds]);
-
+  // Laravel API hooks
+  const { users: laravelUsers, loading: laravelUsersLoading, error: laravelUsersError, refresh: refreshLaravelUsers } = useLaravelUsers();
+  const laravelGallery = useLaravelGallery(true);
+  const gallery = laravelGallery;
 
   const activeSelectedUser = useMemo(() => {
     if (!selectedUserDetails) return null;
     return { ...selectedUserDetails, disabled: getDisabledStatus(selectedUserDetails, disabledMap) };
   }, [selectedUserDetails, disabledMap]);
 
-  const allDailyAvailability = dailyAvailability.documents.find((item) => item.id === availabilityDate);
-  const weekdayDocId = weekdayAvailabilityId(availabilityDate);
-  const defaultAvailability = weeklyAvailability.documents.find((item) => item.id === weekdayDocId);
-  const weekdayDefault = weeklyAvailability.documents.find((item) => item.id === defaultWeekday);
+  const allDailyAvailability = availability.date
+    ? {
+      ...availability.date,
+      ...Object.fromEntries(Object.entries(availability.date.slots || {}).map(([key, value]) => [key, value ? 'Available' : 'Blocked'])),
+    }
+    : null;
+  const defaultAvailability = availability.weekday
+    ? {
+      ...availability.weekday,
+      ...Object.fromEntries(Object.entries(availability.weekday.slots || {}).map(([key, value]) => [key, value ? 'Available' : 'Blocked'])),
+    }
+    : null;
+  const weekdayDefault = defaultWeekday === weekdayAvailabilityId(availabilityDate)
+    ? defaultAvailability
+    : null;
 
-  const unreadCount = enquiries.documents.filter((item) => item.isRead !== true).length;
-  const activeUsersCount = allUsersCombined.filter((item) => isUserActive(item, clock)).length;
-  const newThisWeekCount = allUsersCombined.filter((item) => isCreatedThisWeek(item.createdAt)).length;
-  const disabledAccountsCount = allUsersCombined.filter((item) => item.disabled === true).length;
-  const pendingQuotesCount = quotes.documents.filter((item) => !['Responded', 'Closed'].includes(item.status)).length;
+  const unreadCount = enquiries.enquiries.filter((item) => item.status === 'new').length;
+  const activeUsersCount = laravelUsers.filter((item) => isUserActive(item, clock)).length;
+  const newThisWeekCount = laravelUsers.filter((item) => isCreatedThisWeek(item.created_at)).length;
+  const disabledAccountsCount = laravelUsers.filter((item) => item.disabled === true).length;
 
   const clientUsersCount = useMemo(() => {
-    return allUsersCombined.filter((usr) => getUserRole(usr, adminUidsSet) === 'Client').length;
-  }, [allUsersCombined, adminUidsSet]);
-
-  const adminUsersCount = useMemo(() => {
-    return allUsersCombined.filter((usr) => getUserRole(usr, adminUidsSet) === 'Admin').length;
-  }, [allUsersCombined, adminUidsSet]);
+    return laravelUsers.filter((usr) => !usr.is_admin).length;
+  }, [laravelUsers]);
 
   const bookingsCountByUser = useMemo(() => {
     const counts = {};
-    bookings.documents.forEach((b) => {
-      if (b.userId) {
-        counts[b.userId] = (counts[b.userId] || 0) + 1;
+    bookings.bookings.forEach((b) => {
+      if (b.user_id) {
+        counts[b.user_id] = (counts[b.user_id] || 0) + 1;
       }
     });
     return counts;
-  }, [bookings.documents]);
+  }, [bookings.bookings]);
 
   const filteredUsers = useMemo(() => {
     const needle = userSearch.trim().toLowerCase();
 
-    return allUsersCombined
+    return laravelUsers
       .filter((usr) => {
-        const role = getUserRole(usr, adminUidsSet);
+        const role = usr.is_admin ? 'Admin' : 'Client';
         const matchesRole = userRoleFilter === 'All' || (userRoleFilter === 'Clients' && role === 'Client') || (userRoleFilter === 'Admins' && role === 'Admin');
         
         const isDisabled = usr.disabled === true;
@@ -456,20 +292,19 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
           || (userStatusFilter === 'Disabled' && isDisabled);
 
         const matchesSearch = !needle || [
-          usr.displayName,
+          usr.name,
           usr.email,
-          usr.phone,
-          usr.phoneNumber
+          usr.phone
         ].some((val) => String(val || '').toLowerCase().includes(needle));
 
         return matchesRole && matchesStatus && matchesSearch;
       })
       .sort((a, b) => {
-        const timeA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime();
-        const timeB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime();
+        const timeA = new Date(a.created_at || 0).getTime();
+        const timeB = new Date(b.created_at || 0).getTime();
         return userSortOrder === 'newest' ? timeB - timeA : timeA - timeB;
       });
-  }, [allUsersCombined, adminUidsSet, userSearch, userRoleFilter, userStatusFilter, userSortOrder, clock]);
+  }, [laravelUsers, userSearch, userRoleFilter, userStatusFilter, userSortOrder, clock]);
 
   const paginatedUsers = useMemo(() => {
     return filteredUsers.slice(0, pageLimit);
@@ -477,7 +312,7 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
 
   const filteredBookings = useMemo(() => {
     const needle = bookingSearch.trim().toLowerCase();
-    return bookings.documents.filter((booking) => {
+    return bookings.bookings.filter((booking) => {
       const statusMatches = bookingStatus === 'All statuses' || booking.status === bookingStatus;
       const dateMatches = !bookingDateFilter || booking.date === bookingDateFilter;
       const searchMatches = !needle || [
@@ -486,21 +321,9 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
       ].some((value) => String(value || '').toLowerCase().includes(needle));
       return statusMatches && dateMatches && searchMatches;
     }).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
-  }, [bookings.documents, bookingStatus, bookingDateFilter, bookingSearch]);
+  }, [bookings.bookings, bookingStatus, bookingDateFilter, bookingSearch]);
 
   const clearFeedback = () => { setFeedback(''); setActionError(''); };
-
-  const handleSyncAllUsers = useCallback(async () => {
-    setSyncingAuth(true);
-    try {
-      const res = await syncAllUsersCallable();
-      if (res && res.message) setFeedback(res.message);
-    } catch (err) {
-      console.warn('Backend user sync function note:', err?.message || err);
-    } finally {
-      setSyncingAuth(false);
-    }
-  }, []);
 
   const handleToggleUserDisabled = async (targetUser) => {
     if (!targetUser) return;
@@ -521,72 +344,19 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
         ...(targetUser.uid ? { [targetUser.uid]: newDisabledState } : {}),
         ...(targetEmail ? { [targetEmail]: newDisabledState } : {})
       };
-      try { localStorage.setItem('tk_disabled_users_map', JSON.stringify(next)); } catch (e) {}
+      try {
+        localStorage.setItem('tk_disabled_users_map', JSON.stringify(next));
+      } catch {
+        // Ignore unavailable local storage.
+      }
       return next;
     });
 
     try {
-      const matchingDocs = (users?.documents || []).filter(
-        (u) => u.id === targetId || u.uid === targetId || (u.email && u.email.toLowerCase().trim() === targetEmail)
-      );
-      if (matchingDocs.length > 0) {
-        for (const uDoc of matchingDocs) {
-          await setDoc(doc(db, 'users', uDoc.id), { disabled: newDisabledState, updatedAt: serverTimestamp() }, { merge: true });
-        }
-      } else if (targetId) {
-        await setDoc(doc(db, 'users', targetId), { disabled: newDisabledState, updatedAt: serverTimestamp() }, { merge: true });
-      }
-
-      await setUserDisabledCallable(targetId, newDisabledState).catch(() => {});
+      await laravelApi.updateAdminUser(targetId, { disabled: newDisabledState });
       setFeedback(`User account (${targetUser.email || targetUser.displayName || targetId}) ${newDisabledState ? 'disabled' : 'enabled'} successfully.`);
-    } catch (fsErr) {
+    } catch {
       setFeedback(`User account status updated to ${newDisabledState ? 'Disabled' : 'Enabled'}.`);
-    } finally {
-      setBusyKey('');
-    }
-  };
-
-  const handleSendReset = async (userEmail) => {
-    if (!userEmail) return;
-    setBusyKey(`reset:${userEmail}`);
-    clearFeedback();
-    try {
-      await sendPasswordResetEmail(auth, userEmail);
-      setFeedback(`Password reset email sent to ${userEmail}.`);
-    } catch (err) {
-      try {
-        await sendPasswordResetCallable(userEmail);
-        setFeedback(`Password reset link generated for ${userEmail}.`);
-      } catch (callErr) {
-        console.error('Send reset error:', callErr);
-        setActionError(callErr.message || 'Failed to send password reset email.');
-      }
-    } finally {
-      setBusyKey('');
-    }
-  };
-
-  const handleToggleAdminRole = async (targetUser) => {
-    const currentRole = getUserRole(targetUser, adminUidsSet);
-    const newIsAdmin = currentRole !== 'Admin';
-    const key = `role:${targetUser.id}`;
-    setBusyKey(key);
-    clearFeedback();
-    try {
-      await setAdminRoleCallable(targetUser.id, newIsAdmin);
-      setFeedback(`Role for ${targetUser.email || targetUser.displayName} updated to ${newIsAdmin ? 'Admin' : 'Client'}.`);
-    } catch (err) {
-      try {
-        await setDoc(doc(db, 'users', targetUser.id), { role: newIsAdmin ? 'admin' : 'client', updatedAt: serverTimestamp() }, { merge: true });
-        if (newIsAdmin) {
-          await setDoc(doc(db, 'admins', targetUser.id), { email: targetUser.email, role: 'admin', grantedAt: serverTimestamp() }, { merge: true });
-        } else {
-          await deleteDoc(doc(db, 'admins', targetUser.id));
-        }
-        setFeedback(`Role for ${targetUser.email || targetUser.displayName} updated to ${newIsAdmin ? 'Admin' : 'Client'}.`);
-      } catch (fsErr) {
-        setActionError(fsErr.message || 'Could not change user role.');
-      }
     } finally {
       setBusyKey('');
     }
@@ -600,10 +370,10 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
     clearFeedback();
 
     try {
-      await deleteUserAccountCallable(targetId, deleteBookingsOption);
+      await laravelApi.deleteAdminUser(targetId, { delete_bookings: deleteBookingsOption });
       setFeedback(`User account ${targetUser.email || targetUser.displayName} deleted successfully.`);
     } catch (err) {
-      console.error('Unable to delete Firebase Authentication user:', err);
+      console.error('Unable to delete user:', err);
       setActionError(`Could not delete the account. Deploy the deleteUserAccount Cloud Function and try again. ${err.message || ''}`.trim());
     } finally {
       if (selectedUserDetails?.id === targetId || selectedUserDetails?.uid === targetId) {
@@ -628,29 +398,20 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
 
     try {
       if (action.kind === 'booking-status') {
-        const batch = writeBatch(db);
-        batch.update(doc(db, 'bookings', action.id), { status: action.status, updatedAt: serverTimestamp() });
-        if (['Declined', 'Cancelled'].includes(action.status) && action.booking.slotId && action.booking.date) {
-          batch.delete(doc(db, 'slots', `${action.booking.date}_${action.booking.slotId}`));
-        }
-        await batch.commit();
+        await laravelApi.updateBookingStatus(action.id, { status: action.status });
+        await bookings.refresh();
         setFeedback(`Booking marked as ${action.status}.`);
       } else if (action.kind === 'booking-delete') {
-        const batch = writeBatch(db);
-        batch.delete(doc(db, 'bookings', action.id));
-        if (action.booking.slotId && action.booking.date) {
-          batch.delete(doc(db, 'slots', `${action.booking.date}_${action.booking.slotId}`));
-        }
-        await batch.commit();
+        await laravelApi.deleteAdminBooking(action.id);
+        await bookings.refresh();
         setFeedback('Booking deleted permanently.');
       } else if (action.kind === 'enquiry-delete') {
-        await deleteDoc(doc(db, 'enquiries', action.id));
+        await laravelApi.deleteAdminEnquiry(action.id);
+        await enquiries.refresh();
         setFeedback('Enquiry deleted.');
       } else if (action.kind === 'gallery-delete') {
-        if (action.item.storagePath) {
-          try { await deleteObject(ref(storage, action.item.storagePath)); } catch (stErr) { console.warn('Storage delete warning:', stErr); }
-        }
-        await deleteDoc(doc(db, 'gallery', action.id));
+        await laravelApi.deleteAdminGallery(action.id);
+        await gallery.refresh();
         setFeedback('Gallery media and metadata deleted.');
       }
     } catch (error) {
@@ -670,18 +431,26 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
     });
   };
 
-  const toggleAvailability = async (field, available, collectionName, id, existing) => {
+  const toggleAvailability = async (field, available, collectionName, id) => {
     const key = `${collectionName}:${id}:${field}`;
     setBusyKey(key);
     clearFeedback();
     try {
-      const existingFields = Object.fromEntries(Object.entries(existing || {}).filter(([k]) => k !== 'id'));
-      await setDoc(doc(db, collectionName, id), {
-        ...existingFields,
-        [field]: !available,
-        updatedAt: serverTimestamp(),
-        updatedBy: auth.currentUser?.uid || 'admin',
-      }, { merge: true });
+      const nextAvailable = !available;
+      if (collectionName === 'availability') {
+        const current = allDailyAvailability?.slots || {};
+        await laravelApi.updateAdminAvailability(id, {
+          is_available: Object.values({ ...current, [field]: nextAvailable }).some(Boolean),
+          slots: { ...current, [field]: nextAvailable },
+        });
+      } else {
+        const current = weekdayDefault?.slots || {};
+        await laravelApi.updateAdminDefaultAvailability(id, {
+          is_available: Object.values({ ...current, [field]: nextAvailable }).some(Boolean),
+          slots: { ...current, [field]: nextAvailable },
+        });
+      }
+      await availability.refresh();
       setFeedback(`Slot updated to ${!available ? 'AVAILABLE' : 'UNAVAILABLE'}.`);
     } catch (error) {
       console.error('Unable to save availability:', error);
@@ -694,16 +463,13 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
   const validateGalleryFiles = (files) => {
     const invalid = files.find((file) => {
       if (file.type.startsWith('image/')) return file.size > 5 * 1024 * 1024;
-      if (file.type.startsWith('video/')) return file.size > 50 * 1024 * 1024;
       return true;
     });
     if (invalid) {
       setActionError(
         invalid.type.startsWith('image/')
           ? `File "${invalid.name}" exceeds the 5 MB image size limit.`
-          : invalid.type.startsWith('video/')
-          ? `File "${invalid.name}" exceeds the 50 MB video size limit.`
-          : `File "${invalid.name}" is not a supported format.`
+          : `File "${invalid.name}" is not a supported image format.`
       );
       return false;
     }
@@ -728,23 +494,17 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
 
     try {
       for (const [index, file] of galleryFiles.entries()) {
-        const safeName = file.name.replace(/[^\w.-]/g, '_');
-        const path = `gallery/${Date.now()}_${index}_${safeName}`;
-        const uploaded = await uploadMediaFile(file, path, {
-          maxSize: file.type.startsWith('image/') ? 5 * 1024 * 1024 : 50 * 1024 * 1024,
-          onProgress: (percent) => setUploadProgress((prev) => ({ ...prev, [`${index}:${file.name}`]: percent })),
-        });
-        await addDoc(collection(db, 'gallery'), {
-          url: uploaded.url,
-          type: file.type.startsWith('video/') ? 'video' : 'image',
-          title: galleryTitle.trim(),
-          category: galleryCategory,
-          caption: galleryCaption.trim(),
-          storagePath: uploaded.storagePath,
-          createdAt: serverTimestamp(),
-        });
+        setUploadProgress((prev) => ({ ...prev, [`${index}:${file.name}`]: 50 }));
+        const body = new FormData();
+        body.append('title', galleryTitle.trim() || file.name);
+        body.append('division', galleryCategory.toLowerCase());
+        body.append('description', galleryCaption.trim());
+        body.append('image', file);
+        await laravelApi.createAdminGallery(body);
+        setUploadProgress((prev) => ({ ...prev, [`${index}:${file.name}`]: 100 }));
         completed += 1;
       }
+      await gallery.refresh();
       setFeedback(`Uploaded ${completed} item(s).`);
       setGalleryFiles([]); setGalleryTitle(''); setGalleryCaption(''); setUploadProgress({});
       form.reset();
@@ -759,12 +519,12 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
   const saveGalleryEdit = async (item) => {
     setBusyKey(`gallery-edit:${item.id}`); clearFeedback();
     try {
-      await updateDoc(doc(db, 'gallery', item.id), {
+      await laravelApi.updateAdminGallery(item.id, {
         title: editingGallery[item.id]?.title ?? item.title ?? '',
-        caption: editingGallery[item.id]?.caption ?? item.caption ?? '',
-        category: editingGallery[item.id]?.category ?? item.category ?? 'Horticultural',
-        updatedAt: serverTimestamp(),
+        division: (editingGallery[item.id]?.category ?? item.category ?? 'Horticultural').toLowerCase(),
+        description: editingGallery[item.id]?.caption ?? item.caption ?? item.description ?? '',
       });
+      await gallery.refresh();
       setFeedback('Gallery item updated.');
       setEditingGallery((prev) => { const next = { ...prev }; delete next[item.id]; return next; });
     } catch (error) {
@@ -776,7 +536,7 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
   const handleLogout = async () => {
     clearFeedback();
     try {
-      await signOut(auth);
+      await laravelApi.logout();
       navigate('/admin/login', { replace: true });
     } catch (error) { setActionError(error.message || 'Could not log out.'); }
   };
@@ -882,7 +642,7 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <div className={`rounded-xl border px-3 py-1.5 text-xs font-bold ${cardClass}`}><Users className="mr-1.5 inline h-3.5 w-3.5 text-blue-400" /><span>{clientUsersCount} Clients</span></div>
-              <div className={`rounded-xl border px-3 py-1.5 text-xs font-bold ${cardClass}`}><CalendarDays className="mr-1.5 inline h-3.5 w-3.5 text-emerald-500" /><span>{bookings.documents.length} Bookings</span></div>
+              <div className={`rounded-xl border px-3 py-1.5 text-xs font-bold ${cardClass}`}><CalendarDays className="mr-1.5 inline h-3.5 w-3.5 text-emerald-500" /><span>{bookings.bookings.length} Bookings</span></div>
             </div>
           </div>
 
@@ -895,11 +655,11 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
               {/* Stat Cards */}
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
                 {[
-                  ['Total Users', allUsersCombined.length, Users, 'text-blue-500'],
+                  ['Total Users', laravelUsers.length, Users, 'text-blue-500'],
                   ['Online Now', activeUsersCount, UserCheck, 'text-emerald-500'],
                   ['New This Week', newThisWeekCount, UserPlus, 'text-teal-400'],
                   ['Disabled Accounts', disabledAccountsCount, Ban, 'text-rose-500'],
-                  ['Total Bookings', bookings.documents.length, CalendarDays, 'text-emerald-400'],
+                  ['Total Bookings', bookings.bookings.length, CalendarDays, 'text-emerald-400'],
                   ['Unread Enquiries', unreadCount, MessageSquare, 'text-amber-400'],
                 ].map(([label, value, Icon, colorClass]) => (
                   <article key={label} className={`rounded-3xl border p-5 ${cardClass}`}>
@@ -925,8 +685,17 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-5 dark:border-slate-800">
                   <div>
                     <h2 className="font-black text-base">User Account Management</h2>
-                    <p className="text-xs text-slate-400 font-medium">Manage user permissions, status, and bookings ({clientUsersCount} Clients · {adminUsersCount} Admins)</p>
+                    <p className="text-xs text-slate-400 font-medium">Manage user permissions, status, and bookings ({laravelUsers.filter(u => !u.is_admin).length} Clients · {laravelUsers.filter(u => u.is_admin).length} Admins)</p>
                   </div>
+                  <button
+                    type="button"
+                    onClick={refreshLaravelUsers}
+                    disabled={laravelUsersLoading}
+                    className="inline-flex items-center gap-2 rounded-xl border border-emerald-500/40 px-3 py-2 text-xs font-bold text-emerald-500 transition-colors hover:bg-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${laravelUsersLoading ? 'animate-spin' : ''}`} />
+                    <span>{laravelUsersLoading ? 'Refreshing…' : 'Refresh Users'}</span>
+                  </button>
                 </div>
 
                 {/* Search, Filter & Sort Controls */}
@@ -961,15 +730,15 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
                     onChange={(e) => setUserRoleFilter(e.target.value)}
                     className={inputClass}
                   >
-                    <option value="All">All Roles ({allUsersCombined.length})</option>
-                    <option value="Clients">Clients Only ({clientUsersCount})</option>
-                    <option value="Admins">Admins Only ({adminUsersCount})</option>
+                    <option value="All">All Roles ({laravelUsers.length})</option>
+                    <option value="Clients">Clients Only ({laravelUsers.filter(u => !u.is_admin).length})</option>
+                    <option value="Admins">Admins Only ({laravelUsers.filter(u => u.is_admin).length})</option>
                   </select>
                 </div>
 
                 <StateMessage
-                  loading={users.loading && !users.documents.length && !allUsersCombined.length}
-                  error={users.error}
+                  loading={laravelUsersLoading && !laravelUsers.length}
+                  error={laravelUsersError}
                   isEmpty={!filteredUsers.length}
                   emptyText="No user accounts match the current filter or search criteria."
                   onReset={() => { setUserSearch(''); setUserStatusFilter('All'); setUserRoleFilter('All'); }}
@@ -991,33 +760,29 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
                       </thead>
                       <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-semibold">
                         {paginatedUsers.map((usr) => {
-                          const role = getUserRole(usr, adminUidsSet);
+                          const role = getUserRole(usr);
                           const isAdminRole = role === 'Admin';
-                          const isDisabled = usr.disabled === true;
-                          const userBookingsCount = bookingsCountByUser[usr.id || usr.uid] || 0;
-                          const isSelf = usr.id === auth.currentUser?.uid || usr.uid === auth.currentUser?.uid;
+                          const isDisabled = getDisabledStatus(usr);
+                          const userBookingsCount = bookingsCountByUser[usr.id] || 0;
                           const activeState = isUserActive(usr, clock);
+                          const isSelf = usr.id === currentUser?.id || usr.uid === currentUser?.id;
 
                           return (
                             <tr key={usr.id || usr.email} className={`hover:bg-slate-500/5 transition-colors ${isDisabled ? 'opacity-60 bg-rose-500/5' : ''}`}>
                               <td className="p-4 font-bold flex items-center gap-3">
                                 <div className={`w-9 h-9 rounded-full flex items-center justify-center font-black text-xs text-white overflow-hidden shrink-0 border ${
-                                  isAdminRole ? 'bg-gradient-to-tr from-emerald-600 to-teal-500 border-emerald-400' : 'bg-slate-700 border-slate-600'
+                                  isAdminRole ? 'bg-gradient-to-tr from-emerald-600 to-teal-500 border-emerald-400' : 'bg-blue-600 border-blue-500'
                                 }`}>
-                                  {usr.photoURL ? (
-                                    <img src={usr.photoURL} alt={usr.displayName || 'Avatar'} className="w-full h-full object-cover" />
-                                  ) : (
-                                    <span>{(usr.displayName || usr.email || 'U').charAt(0).toUpperCase()}</span>
-                                  )}
+                                  <span>{(usr.name || usr.email || 'U').charAt(0).toUpperCase()}</span>
                                 </div>
                                 <div>
                                   <p className="font-extrabold text-sm flex items-center gap-1.5">
-                                    <span>{usr.displayName || (isAdminRole ? 'Administrator' : usr.email.split('@')[0])}</span>
-                                    {usr.emailVerified && (
+                                    <span>{usr.name || usr.email?.split('@')[0] || 'Unnamed'}</span>
+                                    {usr.email_verified_at && (
                                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" title="Email Verified" />
                                     )}
                                   </p>
-                                  <p className="text-[10px] text-slate-400 font-medium">UID: {(usr.id || usr.uid || '').substring(0, 10)}…</p>
+                                  <p className="text-[10px] text-slate-400 font-medium">ID: {usr.id}</p>
                                 </div>
                               </td>
 
@@ -1067,7 +832,7 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
                               </td>
 
                               <td className="p-4 text-slate-400 text-[11px]">
-                                {displayDate(usr.createdAt)}
+                                {displayDate(usr.created_at)}
                               </td>
 
                               <td className="p-4 font-bold text-center">
@@ -1103,11 +868,9 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
                                     <span>{isDisabled ? 'Enable' : 'Disable'}</span>
                                   </button>
 
-
-
                                   <button
                                     type="button"
-                                    disabled={isSelf}
+                                    disabled={usr.id === currentUser?.id}
                                     onClick={() => setConfirmAction({
                                       kind: 'delete-user',
                                       id: usr.id,
@@ -1219,9 +982,9 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
                 <div className="grid gap-4 sm:grid-cols-3 pt-2">
                   {BOOKING_SLOTS.map((slot) => {
                     const available = isSlotAvailable(allDailyAvailability, defaultAvailability, slot.field);
-                    const disabled = dailyAvailability.loading || weeklyAvailability.loading || busyKey === `availability:${availabilityDate}:${slot.field}`;
+                    const disabled = availability.loading || busyKey === `availability:${availabilityDate}:${slot.field}`;
                     return (
-                      <button key={slot.field} type="button" disabled={disabled} onClick={() => toggleAvailability(slot.field, available, 'availability', availabilityDate, allDailyAvailability)}
+                      <button key={slot.field} type="button" disabled={disabled} onClick={() => toggleAvailability(slot.field, available, 'availability', availabilityDate)}
                         className={`p-5 rounded-2xl border-2 text-left font-black transition-all flex flex-col justify-between shadow-sm disabled:opacity-50 ${available ? 'border-emerald-500 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20' : 'border-rose-500 bg-rose-500/10 text-rose-500 hover:bg-rose-500/20'}`}>
                         <span className="text-sm font-black">{slot.label}</span>
                         <div className="mt-4 flex items-center justify-between">
@@ -1248,9 +1011,9 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
                 <div className="grid gap-4 sm:grid-cols-3 pt-2">
                   {BOOKING_SLOTS.map((slot) => {
                     const available = typeof weekdayDefault?.[slot.field] === 'boolean' ? weekdayDefault[slot.field] : true;
-                    const disabled = weeklyAvailability.loading || busyKey === `availability_defaults:${defaultWeekday}:${slot.field}`;
+                    const disabled = availability.loading || busyKey === `availability_defaults:${defaultWeekday}:${slot.field}`;
                     return (
-                      <button key={slot.field} type="button" disabled={disabled} onClick={() => toggleAvailability(slot.field, available, 'availability_defaults', defaultWeekday, weekdayDefault)}
+                      <button key={slot.field} type="button" disabled={disabled} onClick={() => toggleAvailability(slot.field, available, 'availability_defaults', defaultWeekday)}
                         className={`p-5 rounded-2xl border-2 text-left font-black transition-all flex flex-col justify-between shadow-sm disabled:opacity-50 ${available ? 'border-emerald-500 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20' : 'border-rose-500 bg-rose-500/10 text-rose-500 hover:bg-rose-500/20'}`}>
                         <span className="text-sm font-black">{slot.label}</span>
                         <div className="mt-4 flex items-center justify-between">
@@ -1267,14 +1030,14 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
 
           {activeSection === 'enquiries' && (
             <section className="space-y-4">
-              <StateMessage loading={enquiries.loading} error={enquiries.error} isEmpty={!enquiries.documents.length} emptyText="No customer enquiries received yet." />
-              {enquiries.documents.map((enq) => (
+              <StateMessage loading={enquiries.loading} error={enquiries.error} isEmpty={!enquiries.enquiries.length} emptyText="No customer enquiries received yet." />
+              {enquiries.enquiries.map((enq) => (
                 <article key={enq.id} className={`rounded-3xl border p-6 space-y-4 ${cardClass}`}>
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <div className="flex items-center gap-2">
                         <h3 className="font-black text-base text-emerald-500">{enq.name || 'Enquiry'}</h3>
-                        {enq.isRead !== true && <span className="rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-500 px-2 py-0.5 text-[10px] font-black">UNREAD</span>}
+                        {enq.status === 'new' && <span className="rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-500 px-2 py-0.5 text-[10px] font-black">UNREAD</span>}
                       </div>
                       <p className="mt-1 text-xs text-slate-400 font-medium">{enq.email || 'No email'} · {enq.phone || 'No phone'}</p>
                       <p className="mt-0.5 text-[10px] text-slate-500">{displayDate(enq.createdAt)}</p>
@@ -1287,11 +1050,13 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
                       <button type="button" onClick={async () => {
                         clearFeedback();
                         try {
-                          await updateDoc(doc(db, 'enquiries', enq.id), { isRead: enq.isRead !== true, updatedAt: serverTimestamp() });
-                          setFeedback(enq.isRead === true ? 'Marked as unread.' : 'Marked as read.');
+                          const nextStatus = enq.status === 'new' ? 'replied' : 'new';
+                          await laravelApi.updateEnquiryStatus(enq.id, { status: nextStatus });
+                          await enquiries.refresh();
+                          setFeedback(nextStatus === 'new' ? 'Marked as unread.' : 'Marked as read.');
                         } catch (err) { setActionError(err.message || 'Could not update enquiry.'); }
                       }} className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-bold transition-all ${isDark ? 'border-slate-800 bg-slate-950 hover:bg-slate-800' : 'border-slate-300 bg-white hover:bg-slate-100'}`}>
-                        <CheckCheck className="h-3.5 w-3.5" /><span>{enq.isRead === true ? 'Mark Unread' : 'Mark Read'}</span>
+                        <CheckCheck className="h-3.5 w-3.5" /><span>{enq.status === 'new' ? 'Mark Read' : 'Mark Unread'}</span>
                       </button>
                       <button type="button" onClick={() => setConfirmAction({ kind: 'enquiry-delete', id: enq.id, title: 'Delete Enquiry?', body: `Delete enquiry from ${enq.name || enq.email || 'customer'}?` })} className="rounded-xl border border-rose-500/40 hover:bg-rose-500/10 p-2 text-rose-500 transition-colors">
                         <Trash2 className="h-4 w-4" />
@@ -1308,7 +1073,7 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
             <section className="space-y-6">
               <form onSubmit={uploadGallery} className={`rounded-3xl border p-6 space-y-4 ${cardClass}`}>
                 <h2 className="text-lg font-black tracking-tight">Upload Gallery Media</h2>
-                <p className="text-xs text-slate-400">Photos (up to 5 MB) & Videos (up to 50 MB) uploaded directly to Firebase Storage.</p>
+                <p className="text-xs text-slate-400">Photos up to 5 MB are uploaded through the Laravel API.</p>
                 <div className="grid gap-3 sm:grid-cols-3">
                   <input aria-label="Title" value={galleryTitle} onChange={(e) => setGalleryTitle(e.target.value)} placeholder="Media Title (optional)" className={inputClass} />
                   <select aria-label="Category" value={galleryCategory} onChange={(e) => setGalleryCategory(e.target.value)} className={inputClass}>
@@ -1319,9 +1084,9 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
                 <div className="pt-2">
                   <label className={`flex flex-col items-center justify-center p-6 rounded-2xl border-2 border-dashed cursor-pointer transition-colors ${isDark ? 'border-slate-800 bg-slate-950/50 hover:border-emerald-500' : 'border-slate-300 bg-slate-50 hover:border-emerald-500'}`}>
                     <Upload className="w-8 h-8 text-emerald-500 mb-2" />
-                    <span className="text-xs font-bold">Click to select image or video files</span>
-                    <span className="text-[10px] text-slate-400 mt-1">Images & Videos supported</span>
-                    <input type="file" accept="image/*,video/*" multiple disabled={uploading} onChange={handleGallerySelect} className="hidden" />
+                    <span className="text-xs font-bold">Click to select image files</span>
+                    <span className="text-[10px] text-slate-400 mt-1">Images supported</span>
+                    <input type="file" accept="image/*" multiple disabled={uploading} onChange={handleGallerySelect} className="hidden" />
                   </label>
                 </div>
                 {galleryFiles.length > 0 && (
@@ -1336,7 +1101,7 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
                   </div>
                 )}
                 <button type="submit" disabled={uploading || !galleryFiles.length} className="px-6 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow-lg transition-all disabled:opacity-50">
-                  {uploading ? 'Uploading to Firebase Storage…' : `Upload ${galleryFiles.length || ''} Selected Item(s)`}
+                  {uploading ? 'Uploading through Laravel…' : `Upload ${galleryFiles.length || ''} Selected Item(s)`}
                 </button>
               </form>
 
@@ -1361,7 +1126,7 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
                           </select>
                           <div className="flex gap-2 pt-2">
                             <button type="button" disabled={busyKey === `gallery-edit:${item.id}`} onClick={() => saveGalleryEdit(item)} className="flex-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 py-2 text-xs font-black text-white transition-all disabled:opacity-50">Save Details</button>
-                            <button type="button" onClick={() => setConfirmAction({ kind: 'gallery-delete', id: item.id, item, title: 'Delete Gallery Media?', body: 'Permanently delete this storage file and Firestore item.' })} className="p-2 rounded-xl border border-rose-500/40 text-rose-500 hover:bg-rose-500/10 transition-colors">
+                            <button type="button" onClick={() => setConfirmAction({ kind: 'gallery-delete', id: item.id, item, title: 'Delete Gallery Media?', body: 'Permanently delete this gallery item from the Laravel backend.' })} className="p-2 rounded-xl border border-rose-500/40 text-rose-500 hover:bg-rose-500/10 transition-colors">
                               <Trash2 className="w-4 h-4" />
                             </button>
                           </div>
@@ -1371,6 +1136,210 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
                   })}
                 </div>
               </div>
+            </section>
+          )}
+
+          {/* LARAVEL USERS SECTION */}
+          {activeSection === 'laravel-users' && (
+            <section className="space-y-6">
+              <article className={`overflow-hidden rounded-3xl border ${cardClass}`}>
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-5 dark:border-slate-800">
+                  <div>
+                    <h2 className="font-black text-base">Laravel Database Users</h2>
+                    <p className="text-xs text-slate-400 font-medium">Users registered in the Laravel/MySQL database ({laravelUsers.length} users)</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={refreshLaravelUsers}
+                    disabled={laravelUsersLoading}
+                    className="inline-flex items-center gap-2 rounded-xl border border-emerald-500/40 px-3 py-2 text-xs font-bold text-emerald-500 transition-colors hover:bg-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${laravelUsersLoading ? 'animate-spin' : ''}`} />
+                    <span>{laravelUsersLoading ? 'Refreshing…' : 'Refresh Users'}</span>
+                  </button>
+                </div>
+
+                {/* Search & Filter Controls */}
+                <div className="p-4 border-b border-slate-200 dark:border-slate-800 grid gap-3 sm:grid-cols-4">
+                  <div className="relative sm:col-span-2">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                    <input
+                      aria-label="Search Laravel users by name, email or phone"
+                      placeholder="Search name, email, phone…"
+                      className={`${inputClass} w-full pl-9`}
+                    />
+                  </div>
+
+                  <select aria-label="Filter users by role" className={inputClass}>
+                    <option value="all">All Roles</option>
+                    <option value="user">Clients</option>
+                    <option value="admin">Admins</option>
+                  </select>
+                </div>
+
+                {/* Loading/Error/Empty States */}
+                {laravelUsersLoading && !laravelUsers.length && (
+                  <div className="flex flex-col items-center justify-center p-10 text-slate-500 font-sans">
+                    <Loader2 className="w-6 h-6 animate-spin text-emerald-500 mb-2" />
+                    <p className="text-xs font-bold uppercase tracking-wider text-emerald-500">Loading Laravel Users…</p>
+                  </div>
+                )}
+
+                {laravelUsersError && (
+                  <div role="alert" className="m-4 rounded-2xl border border-rose-500/40 bg-rose-500/10 p-4 text-xs text-rose-600 dark:text-rose-300">
+                    <p className="font-bold flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 shrink-0" />
+                      <span>Failed to load users</span>
+                    </p>
+                    <p className="mt-1 text-[11px] opacity-80">{laravelUsersError}</p>
+                    <button
+                      type="button"
+                      onClick={refreshLaravelUsers}
+                      className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 border border-rose-500/30 text-xs font-bold transition-all"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Retry</span>
+                    </button>
+                  </div>
+                )}
+
+                {!laravelUsersLoading && !laravelUsersError && !laravelUsers.length && (
+                  <div className="p-12 text-center text-xs text-slate-400 font-medium space-y-3">
+                    <p className="font-semibold">No Laravel users found in the database.</p>
+                    <button
+                      type="button"
+                      onClick={refreshLaravelUsers}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold transition-all"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Refresh</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* Users Table */}
+                {laravelUsers.length > 0 && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[840px] text-left text-xs">
+                      <thead className="border-b border-slate-200 dark:border-slate-800 uppercase text-[10px] font-black text-slate-400">
+                        <tr>
+                          <th className="p-4">User</th>
+                          <th className="p-4">Email & Phone</th>
+                          <th className="p-4">Role</th>
+                          <th className="p-4">Email Verified</th>
+                          <th className="p-4">Joined</th>
+                          <th className="p-4">Updated</th>
+                          <th className="p-4 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-semibold">
+                        {laravelUsers.map((usr) => (
+                          <tr key={usr.id} className="hover:bg-slate-500/5 transition-colors">
+                            <td className="p-4 font-bold flex items-center gap-3">
+                              <div className={`w-9 h-9 rounded-full flex items-center justify-center font-black text-xs text-white overflow-hidden shrink-0 border ${
+                                usr.is_admin ? 'bg-gradient-to-tr from-emerald-600 to-teal-500 border-emerald-400' : 'bg-blue-600 border-blue-500'
+                              }`}>
+                                {(usr.name || usr.email || 'U').charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <p className="font-extrabold text-sm flex items-center gap-1.5">
+                                  <span>{usr.name || usr.email?.split('@')[0] || 'Unnamed'}</span>
+                                  {usr.email_verified_at && (
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" title="Email Verified" />
+                                  )}
+                                </p>
+                                <p className="text-[10px] text-slate-400 font-medium">ID: {usr.id}</p>
+                              </div>
+                            </td>
+
+                            <td className="p-4 space-y-0.5">
+                              <p className="font-bold">{usr.email || '—'}</p>
+                              <p className="text-[11px] text-slate-400">{usr.phone || 'No phone'}</p>
+                              {usr.address && <p className="text-[10px] text-slate-500 truncate max-w-xs">{usr.address}{usr.postcode ? `, ${usr.postcode}` : ''}</p>}
+                            </td>
+
+                            <td className="p-4">
+                              <span className={`rounded-full px-2.5 py-1 text-[10px] font-black border ${
+                                usr.is_admin
+                                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
+                                  : 'bg-blue-500/15 text-blue-400 border-blue-500/30'
+                              }`}>
+                                {usr.is_admin ? 'Admin' : 'Client'}
+                              </span>
+                            </td>
+
+                            <td className="p-4 text-center">
+                              <span className={`inline-flex items-center justify-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-black ${
+                                usr.email_verified_at
+                                  ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                                  : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                              }`}>
+                                {usr.email_verified_at ? (
+                                  <>
+                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                    <span>Verified</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <AlertTriangle className="w-3.5 h-3.5" />
+                                    <span>Pending</span>
+                                  </>
+                                )}
+                              </span>
+                            </td>
+
+                            <td className="p-4 text-slate-400 text-[11px]">
+                              {usr.created_at ? new Date(usr.created_at).toLocaleString('en-GB', { dateStyle: 'medium' }) : '—'}
+                            </td>
+
+                            <td className="p-4 text-slate-400 text-[11px]">
+                              {usr.updated_at ? new Date(usr.updated_at).toLocaleString('en-GB', { dateStyle: 'medium' }) : '—'}
+                            </td>
+
+                            <td className="p-4 text-right">
+                              <div className="flex items-center justify-end gap-1.5 flex-wrap sm:flex-nowrap">
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-700 bg-slate-800/60 hover:bg-slate-800 text-slate-200 text-[11px] font-bold transition-all"
+                                  title="View user details"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5 text-blue-400" />
+                                  <span>View</span>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Pagination */}
+                {laravelUsers.length > 0 && (
+                  <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs">
+                    <span className="text-slate-400">
+                      Showing {laravelUsers.length} of {laravelUsers.length} users
+                    </span>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled
+                        className="px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-400 text-xs font-bold"
+                      >
+                        Previous
+                      </button>
+                      <button
+                        type="button"
+                        disabled
+                        className="px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-400 text-xs font-bold"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </article>
             </section>
           )}
         </main>
@@ -1383,10 +1352,10 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
             <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 font-black text-base flex items-center justify-center">
-                  {(activeSelectedUser.displayName || activeSelectedUser.email || 'U').charAt(0).toUpperCase()}
+                  {(activeSelectedUser.name || activeSelectedUser.email || 'U').charAt(0).toUpperCase()}
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-lg">{activeSelectedUser.displayName || 'Client Account'}</h3>
+                  <h3 className="font-extrabold text-lg">{activeSelectedUser.name || 'Client Account'}</h3>
                   <p className="text-xs text-slate-400">{activeSelectedUser.email || 'No email'}</p>
                 </div>
               </div>
@@ -1400,23 +1369,23 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
             </div>
 
             <div className="grid gap-3 text-xs sm:grid-cols-2 p-4 rounded-2xl bg-slate-500/5">
-              <div><span className="text-slate-400 block font-semibold">Phone:</span><span className="font-bold">{activeSelectedUser.phone || activeSelectedUser.phoneNumber || '—'}</span></div>
-              <div><span className="text-slate-400 block font-semibold">Role:</span><span className="font-bold">{getUserRole(activeSelectedUser, adminUidsSet)}</span></div>
-              <div><span className="text-slate-400 block font-semibold">Joined Date:</span><span>{displayDate(activeSelectedUser.createdAt)}</span></div>
-              <div><span className="text-slate-400 block font-semibold">Last Sign In:</span><span>{displayDate(activeSelectedUser.lastSignInAt)}</span></div>
+              <div><span className="text-slate-400 block font-semibold">Phone:</span><span className="font-bold">{activeSelectedUser.phone || '—'}</span></div>
+              <div><span className="text-slate-400 block font-semibold">Role:</span><span className="font-bold">{getUserRole(activeSelectedUser)}</span></div>
+              <div><span className="text-slate-400 block font-semibold">Joined Date:</span><span>{displayDate(activeSelectedUser.created_at)}</span></div>
+              <div><span className="text-slate-400 block font-semibold">Last Updated:</span><span>{displayDate(activeSelectedUser.updated_at)}</span></div>
             </div>
 
             {/* User's Bookings */}
             <div className="space-y-3">
               <h4 className="font-black text-sm text-emerald-400 flex items-center gap-2">
                 <CalendarDays className="w-4 h-4" />
-                <span>Associated Bookings ({bookings.documents.filter((b) => b.userId === activeSelectedUser.id || b.customerEmail === activeSelectedUser.email).length})</span>
+                <span>Associated Bookings ({bookings.bookings.filter((b) => b.user_id === activeSelectedUser.id || b.client_email === activeSelectedUser.email).length})</span>
               </h4>
-              {bookings.documents.filter((b) => b.userId === activeSelectedUser.id || b.customerEmail === activeSelectedUser.email).length === 0 ? (
+              {bookings.bookings.filter((b) => b.user_id === activeSelectedUser.id || b.client_email === activeSelectedUser.email).length === 0 ? (
                 <p className="text-xs text-slate-500 italic">No bookings recorded for this account.</p>
               ) : (
                 <div className="space-y-2">
-                  {bookings.documents.filter((b) => b.userId === activeSelectedUser.id || b.customerEmail === activeSelectedUser.email).map((b) => (
+                  {bookings.bookings.filter((b) => b.user_id === activeSelectedUser.id || b.client_email === activeSelectedUser.email).map((b) => (
                     <div key={b.id} className="p-3 rounded-xl border border-slate-800 bg-slate-950 text-xs flex justify-between items-center">
                       <div>
                         <p className="font-bold">{b.service || 'Horticultural Service'}</p>
@@ -1453,7 +1422,7 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
 
                 <button
                   type="button"
-                  disabled={activeSelectedUser.id === auth.currentUser?.uid}
+                  disabled={activeSelectedUser.id === currentUser?.id}
                   onClick={() => {
                     const target = activeSelectedUser;
                     setSelectedUserDetails(null);
@@ -1466,7 +1435,7 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
                     });
                   }}
                   className={`flex items-center justify-center gap-2 p-3 rounded-xl border border-rose-500/40 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 text-xs font-black transition-all ${
-                    activeSelectedUser.id === auth.currentUser?.uid ? 'opacity-40 cursor-not-allowed' : ''
+                    activeSelectedUser.id === currentUser?.id ? 'opacity-40 cursor-not-allowed' : ''
                   }`}
                 >
                   <UserX className="w-4 h-4" />
