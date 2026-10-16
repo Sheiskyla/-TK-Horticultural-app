@@ -6,6 +6,14 @@ const JWT_SECRET = process.env.JWT_SECRET;
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_JWKS_URI = 'https://www.googleapis.com/oauth2/v3/certs';
 
+function generateToken(user) {
+  return jwt.sign(
+    { id: user.id, email: user.email, is_admin: !!user.is_admin },
+    JWT_SECRET,
+    { expiresIn: '7d' }
+  );
+}
+
 // Cache for Google's public keys (JWKS)
 let googleKeysCache = null;
 let googleKeysFetchedAt = 0;
