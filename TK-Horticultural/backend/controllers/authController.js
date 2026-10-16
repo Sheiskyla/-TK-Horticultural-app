@@ -3,11 +3,73 @@ const bcrypt = require('bcryptjs');
 const { User } = require('../models');
 
 const JWT_SECRET = process.env.JWT_SECRET;
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const GOOGLE_JWKS_URI = 'https://www.googleapis.com/oauth2/v3/certs';
 
-// Helper to generate token
-const generateToken = (user) => {
-  return jwt.sign({ id: user.id, email: user.email, is_admin: user.is_admin }, JWT_SECRET, { expiresIn: '1d' });
-};
+// Cache for Google's public keys (JWKS)
+let googleKeysCache = null;
+let googleKeysFetchedAt = 0;
+const KEYS_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+async function fetchGoogleKeys() {
+  const now = Date.now();
+  if (googleKeysCache && now - googleKeysFetchedAt < KEYS_CACHE_TTL) {
+    return googleKeysCache;
+  }
+
+  const response = await fetch(GOOGLE_JWKS_URI);
+  if (!response.ok) {
+    throw new Error('Failed to fetch Google public keys');
+  }
+  const jwks = await response.json();
+  googleKeysCache = jwks.keys;
+  googleKeysFetchedAt = now;
+  return googleKeysCache;
+}
+
+async function verifyGoogleIdToken(idToken) {
+  if (!GOOGLE_CLIENT_ID) {
+    throw new Error('GOOGLE_CLIENT_ID is not configured');
+  }
+
+  const decoded = jwt.decode(idToken, { complete: true });
+  if (!decoded || !decoded.header || !decoded.header.kid) {
+    throw new Error('The Google token is malformed');
+  }
+
+  const jwks = await fetchGoogleKeys();
+  const key = jwks.find(k => k.kid === decoded.header.kid);
+  if (!key) {
+    throw new Error('Unable to find a key that matches the Google token');
+  }
+
+  const { createPublicKey } = await import('crypto');
+  const publicKey = createPublicKey({
+    key: {
+      kty: key.kty,
+      kid: key.kid,
+      use: key.use,
+      alg: key.alg,
+      n: key.n,
+      e: key.e
+    },
+    format: 'jwk',
+    type: 'public'
+  });
+
+  const payload = jwt.verify(idToken, publicKey, {
+    algorithms: ['RS256'],
+    audience: GOOGLE_CLIENT_ID,
+    issuer: ['accounts.google.com', 'https://accounts.google.com'],
+    clockTolerance: 300
+  });
+
+  if (!payload.email_verified) {
+    throw new Error('Google email is not verified');
+  }
+
+  return payload;
+}
 
 // Middleware to protect routes
 const authMiddleware = (req, res, next) => {
@@ -116,10 +178,45 @@ class AuthController {
   }
 
   async googleLogin(req, res) {
-    // For simplicity, we'll treat Google login as regular login with a dummy password.
-    // In a real app, you would verify the id_token with Google and find/create user.
-    // Since we don't have GoogleAuthService, we'll just return error.
-    res.status(501).json({ message: 'Google login not implemented' });
+    try {
+      const { id_token: idToken } = req.body;
+
+      if (!idToken) {
+        return res.status(422).json({ message: 'Google ID token is required' });
+      }
+
+      const payload = await verifyGoogleIdToken(idToken);
+
+      let user = await User.findOne({ where: { email: payload.email } });
+
+      if (!user) {
+        user = await User.create({
+          name: payload.name || payload.email.split('@')[0],
+          email: payload.email,
+          password: await bcrypt.hash(Math.random().toString(36).slice(2), 10),
+          google_uid: payload.sub,
+          email_verified_at: new Date(),
+        });
+      } else if (!user.google_uid) {
+        await user.update({ google_uid: payload.sub });
+      }
+
+      const token = generateToken(user);
+
+      res.json({
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          address: user.address,
+        },
+        token,
+      });
+    } catch (error) {
+      console.error(error);
+      res.status(401).json({ message: error.message || 'Google login failed' });
+    }
   }
 
   async logout(req, res) {
