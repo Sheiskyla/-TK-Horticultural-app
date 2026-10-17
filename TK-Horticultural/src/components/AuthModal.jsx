@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { GoogleLogin } from '@react-oauth/google';
+import GoogleSignInButton from './GoogleSignInButton.jsx';
 import { useAuth } from '../context/authContextCore';
 import { 
   User, 
@@ -379,7 +379,7 @@ export default function AuthModal({
           </div>
         </div>
 
-        <GoogleLogin
+        <GoogleSignInButton
           onSuccess={handleGoogleSignIn}
           onError={() => setErrorMsg('Google sign-in failed. Please try again.')}
           useOneTap={false}

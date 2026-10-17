@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { GoogleLogin } from '@react-oauth/google';
+import GoogleSignInButton from '../components/GoogleSignInButton.jsx';
 import { useAuth } from '../context/authContextCore';
 import {
   Leaf,
@@ -309,7 +309,7 @@ export default function Signup({ isDarkMode }) {
               </div>
             </div>
 
-            <GoogleLogin
+            <GoogleSignInButton
               onSuccess={handleGoogleSignIn}
               onError={() => setErrorMsg('Google sign-in failed. Please try again.')}
               useOneTap={false}
