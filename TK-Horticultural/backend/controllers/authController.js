@@ -2,9 +2,13 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { User } = require('../models');
 
-const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? null : 'local-development-secret');
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_JWKS_URI = 'https://www.googleapis.com/oauth2/v3/certs';
+
+if (process.env.NODE_ENV === 'production' && !JWT_SECRET) {
+  throw new Error('Missing JWT_SECRET in production. Set JWT_SECRET in the Vercel project environment.');
+}
 
 function generateToken(user) {
   return jwt.sign(

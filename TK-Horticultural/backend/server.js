@@ -18,8 +18,11 @@ app.use('/api', apiRoutes);
 
 // Error handling middleware
 app.use((err, req, res, _next) => {
-  console.error(err.stack);
-  res.status(500).json({ message: 'Something went wrong!' });
+  console.error(err.stack || err);
+  const message = process.env.NODE_ENV === 'production'
+    ? 'Something went wrong!'
+    : (err && err.message) || 'Something went wrong!';
+  res.status(err && err.statusCode ? err.statusCode : 500).json({ message });
 });
 
 module.exports = app;
