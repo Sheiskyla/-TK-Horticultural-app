@@ -6,11 +6,11 @@ const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'producti
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_JWKS_URI = 'https://www.googleapis.com/oauth2/v3/certs';
 
-if (process.env.NODE_ENV === 'production' && !JWT_SECRET) {
-  throw new Error('Missing JWT_SECRET in production. Set JWT_SECRET in the Vercel project environment.');
-}
-
 function generateToken(user) {
+  if (!JWT_SECRET) {
+    throw new Error('JWT_SECRET is not configured');
+  }
+
   return jwt.sign(
     { id: user.id, email: user.email, is_admin: !!user.is_admin },
     JWT_SECRET,

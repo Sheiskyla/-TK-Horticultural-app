@@ -17,25 +17,6 @@ const baseConfig = {
   logging: false
 };
 
-const hasDatabaseConfig = !!(
-  process.env.DATABASE_URL ||
-  process.env.MYSQL_PUBLIC_URL ||
-  process.env.MYSQL_URL ||
-  process.env.DB_HOST ||
-  process.env.MYSQLHOST ||
-  process.env.DB_DATABASE ||
-  process.env.MYSQLDATABASE ||
-  process.env.DB_USERNAME ||
-  process.env.MYSQLUSER ||
-  process.env.DB_PASSWORD ||
-  process.env.MYSQLPASSWORD ||
-  process.env.DB_SOCKET_PATH
-);
-
-if (process.env.NODE_ENV === 'production' && !hasDatabaseConfig) {
-  throw new Error('Missing production database configuration. Set DATABASE_URL or the DB_ / MYSQL_PUBLIC_URL variables in Vercel.');
-}
-
 // Use socket path if provided (XAMPP), otherwise use host/port
 if (process.env.DB_SOCKET_PATH) {
   baseConfig.host = undefined;
