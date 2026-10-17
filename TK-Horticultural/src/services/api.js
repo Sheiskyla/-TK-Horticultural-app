@@ -1,6 +1,12 @@
-const API_BASE = import.meta.env.VITE_API_URL || (
-  import.meta.env.PROD ? '/api' : 'http://localhost:8000/api'
-);
+const configuredApiBase = import.meta.env.VITE_API_URL?.trim();
+const isProductionLoopbackUrl = import.meta.env.PROD
+  && configuredApiBase
+  && /^https?:\/\/(?:localhost|127(?:\.\d{1,3}){3}|\[::1\])(?::\d+)?(?:\/|$)/i.test(configuredApiBase);
+const API_BASE = configuredApiBase && !isProductionLoopbackUrl
+  ? configuredApiBase
+  : import.meta.env.PROD
+    ? '/api'
+    : 'http://localhost:8000/api';
 const TOKEN_KEY = 'api_token';
 
 class ApiService {
