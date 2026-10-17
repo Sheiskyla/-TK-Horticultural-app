@@ -33,10 +33,9 @@ The backend requires:
 GOOGLE_CLIENT_ID=your-google-web-client-id
 ```
 
-The backend also requires `JWT_SECRET` and MySQL connection settings
-(`DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD`). Set
-these in Vercel as server-side environment variables; local `.env` files are
-not deployed.
+The backend also requires `JWT_SECRET` and MySQL connection settings. It
+accepts either `DATABASE_URL` or the individual `DB_HOST`, `DB_PORT`,
+`DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD` variables.
 
 Google OAuth returns an ID token in the browser. The frontend sends that token
 to `POST /api/google/login`; the backend verifies it with Google and stores the
@@ -48,9 +47,27 @@ Set these project environment variables in Vercel and redeploy:
 
 - `VITE_GOOGLE_CLIENT_ID`: the Google OAuth **Web application** client ID
 - `GOOGLE_CLIENT_ID`: the same client ID, used by the Node.js API to verify tokens
-- `JWT_SECRET` and `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`:
-  API signing key and production database connection
+- `JWT_SECRET` and either `DATABASE_URL` or the `DB_HOST`, `DB_PORT`,
+  `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` variables: API signing key and
+  production database connection
 - `VITE_API_URL`: optional; leave unset to use this deployment's `/api` endpoint
+
+To connect Vercel to Railway MySQL, enable **Public Networking / TCP Proxy** in
+the Railway MySQL service's Settings → Networking. In Vercel, add
+`MYSQL_PUBLIC_URL` with Railway's generated public MySQL URL, or add
+`DATABASE_URL` with the same value, then redeploy. The backend accepts either
+URL. Alternatively, use the TCP proxy host and port with `DB_HOST`, `DB_PORT`,
+`DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD`. Railway's private
+`MYSQLHOST`/`MYSQL_URL` values are only reachable from services inside Railway,
+not from Vercel. They are recognized by the app if its API is hosted in
+Railway. Keep the database password and URL server-side, never in a `VITE_`
+variable.
+
+For a new, empty database, create the application tables once by running
+`node backend/setup.js` from a trusted environment that has the Railway public
+database URL configured as `MYSQL_PUBLIC_URL` (or `DATABASE_URL`). Do not run
+the setup against a database containing important data without first taking a
+backup; Sequelize's `alter` sync may modify existing tables.
 
 In Google Cloud Console, add `https://tk-horticultural.vercel.app` to the OAuth
 client's authorized JavaScript origins. Do not use a placeholder client ID. If
