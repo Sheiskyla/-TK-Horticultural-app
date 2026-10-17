@@ -1,7 +1,7 @@
-const LARAVEL_API_BASE = import.meta.env.VITE_LARAVEL_API_URL || 'http://localhost:8000/api';
-const TOKEN_KEY = 'laravel_token';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+const TOKEN_KEY = 'api_token';
 
-class LaravelApiService {
+class ApiService {
   constructor() {
     this.token = localStorage.getItem(TOKEN_KEY);
   }
@@ -28,7 +28,7 @@ class LaravelApiService {
     if (!(options.body instanceof FormData)) headers['Content-Type'] = 'application/json';
     if (this.token) headers.Authorization = `Bearer ${this.token}`;
 
-    const response = await fetch(`${LARAVEL_API_BASE}${endpoint}`, {
+    const response = await fetch(`${API_BASE}${endpoint}`, {
       ...options,
       headers,
       body: options.body && !(options.body instanceof FormData)
@@ -64,7 +64,7 @@ class LaravelApiService {
   async logout() {
     try {
       await this.request('/logout', { method: 'POST' });
-    } catch (e) {
+    } catch {
       // Continue with local logout even if API call fails
     } finally {
       this.setToken(null);
@@ -107,5 +107,5 @@ class LaravelApiService {
   }
 }
 
-export const laravelApi = new LaravelApiService();
-export default laravelApi;
+export const api = new ApiService();
+export default api;

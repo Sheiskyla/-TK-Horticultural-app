@@ -63,7 +63,7 @@ router.put('/admin/users/:id', AdminController.updateUser);
 router.delete('/admin/users/:id', AdminController.destroyUser);
 router.get('/admin/gallery', GalleryController.adminIndex);
 router.post('/admin/gallery', GalleryController.store);
-router.post('/admin/gallery/:id', GalleryController.update); // Laravel uses POST for update
+router.post('/admin/gallery/:id', GalleryController.update); // POST method for update
 router.delete('/admin/gallery/:id', GalleryController.destroy);
 router.put('/admin/availability/:date', SlotController.updateDateAvailability);
 router.get('/admin/availability/:date', SlotController.adminAvailability);

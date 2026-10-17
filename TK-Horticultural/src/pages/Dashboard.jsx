@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 import { uploadMediaFile } from '../lib/uploadMediaFile';
 import useDateAvailability, { BOOKING_SLOTS } from '../hooks/useDateAvailability';
-import laravelApi from '../services/laravelApi';
+import api from '../services/api';
 
 const todayStr = () => {
   const d = new Date();
@@ -77,7 +77,7 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
   useEffect(() => {
     if (!uid) return;
     let active = true;
-    laravelApi.getUserBookings().then((data) => {
+    api.getUserBookings().then((data) => {
       if (active) setBookings(data.data || []);
     }).catch((err) => {
       console.error('Unable to load bookings:', err);
@@ -89,7 +89,7 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
   useEffect(() => {
     const y = calMonth.getFullYear();
     let active = true;
-    laravelApi.getMonthlyAvailability({ year: y, month: calMonth.getMonth() + 1 })
+    api.getMonthlyAvailability({ year: y, month: calMonth.getMonth() + 1 })
       .then((data) => { if (active) setMonthSlots(Object.values(data)); })
       .catch((err) => console.error('Unable to load monthly availability:', err));
     return () => { active = false; };
@@ -97,7 +97,7 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
 
   useEffect(() => {
     if (!uid) return;
-    laravelApi.getProfile().then(setProfile).catch((err) => console.error('Unable to load profile:', err));
+    api.getProfile().then(setProfile).catch((err) => console.error('Unable to load profile:', err));
   }, [uid]);
 
   const stats = useMemo(() => {
@@ -112,8 +112,8 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
 
   const handleSignOut = async () => {
     try {
-      await laravelApi.logout().catch(() => {});
-      await laravelApi.logout();
+      await api.logout().catch(() => {});
+      await api.logout();
       navigate('/login');
     } catch (err) {
       console.error('Sign out error:', err);
@@ -155,7 +155,7 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
         file.file,
         `users/${uid}/bookings/${Date.now()}_${file.name.replace(/[^\w.-]/g, '_')}`
       )));
-      await laravelApi.createBooking({
+      await api.createBooking({
         division: bookingService.toLowerCase().includes('clean') ? 'cleaning' : bookingService.toLowerCase().includes('waste') ? 'waste' : 'horticulture',
         service: bookingService,
         notes: trimmedDetails,
@@ -192,7 +192,7 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
     if (!b) return;
     setCancelling(true);
     try {
-      await laravelApi.cancelBooking(b.id);
+      await api.cancelBooking(b.id);
       setBookings((items) => items.filter((item) => item.id !== b.id));
       setCancelTarget(null);
     } catch (e) {
@@ -204,7 +204,7 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
 
   const saveProfile = async () => {
     try {
-      await laravelApi.updateProfile({
+      await api.updateProfile({
         name: currentUser?.displayName || profile.name,
         phone: profile.phone,
         address: profile.address

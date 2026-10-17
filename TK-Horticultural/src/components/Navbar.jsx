@@ -17,7 +17,7 @@ import {
   LayoutDashboard,
 } from 'lucide-react';
 
-export default function Navbar({ onRequestQuote, isDarkMode, onToggleDarkMode, currentUser }) {
+export default function Navbar({ isDarkMode, onToggleDarkMode, currentUser }) {
   const navigate = useNavigate();
   const { logout } = useAuth();
   const drawerRef = useRef(null);

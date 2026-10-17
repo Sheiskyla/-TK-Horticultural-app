@@ -90,7 +90,7 @@ const authMiddleware = (req, res, next) => {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.user = decoded; // attach decoded user info
     next();
-  } catch (err) {
+  } catch {
     return res.status(401).json({ message: 'Unauthenticated.' });
   }
 };

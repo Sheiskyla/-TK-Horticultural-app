@@ -27,7 +27,7 @@ class SlotController {
 
       // Get overrides
       const override = await Availability.findOne({ where: { kind: 'date', key: dateString } });
-      const weekday = parsedDate.getUTCDay(); // 0-6 Sunday-Saturday (but we need to match Laravel's dayOfWeek? Carbon::parse($parsedDate)->dayOfWeek returns 0 for Sunday, 6 for Saturday, same as JS getDay)
+      const weekday = parsedDate.getUTCDay(); // 0-6 Sunday-Saturday (JS getDay returns 0 for Sunday, 6 for Saturday)
       const defaultOverride = await Availability.findOne({ where: { kind: 'weekday', key: weekday.toString() } });
 
       // Get slots for this date

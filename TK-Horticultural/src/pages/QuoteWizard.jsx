@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { uploadMediaFile } from '../lib/uploadMediaFile';
 import useDateAvailability, { BOOKING_SLOTS } from '../hooks/useDateAvailability';
-import laravelApi from '../services/laravelApi';
+import api from '../services/api';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import { 
@@ -144,7 +144,7 @@ export default function QuoteWizard({ isDarkMode, setIsDarkMode, currentUser }) 
         file,
         `users/${currentUser.uid}/quotes/${Date.now()}_${file.name.replace(/[^\w.-]/g, '_')}`
       )));
-      await laravelApi.createBooking({
+      await api.createBooking({
         division: selectedServices.join(' ').toLowerCase().includes('clean') ? 'cleaning' : selectedServices.join(' ').toLowerCase().includes('waste') ? 'waste' : 'horticulture',
         service: selectedServices.join(', '),
         sub_services: selectedServices,

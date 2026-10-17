@@ -8,13 +8,13 @@ import {
 } from 'lucide-react';
 import { BOOKING_SLOTS, isSlotAvailable, weekdayAvailabilityId } from '../hooks/useDateAvailability';
 import {
-  useLaravelAdminBookings,
-  useLaravelAdminEnquiries,
-  useLaravelAvailability,
-  useLaravelGallery,
-  useLaravelUsers,
-} from '../hooks/useLaravelApi';
-import { laravelApi } from '../services/laravelApi';
+  useAdminBookings,
+  useAdminEnquiries,
+  useAvailability,
+  useGallery,
+  useUsers,
+} from '../hooks/useApi';
+import { api } from '../services/api';
 import { useAuth } from '../context/authContextCore';
 
 const NAV_ITEMS = [
@@ -23,7 +23,7 @@ const NAV_ITEMS = [
   { id: 'availability', label: 'Availability', icon: Clock3 },
   { id: 'enquiries', label: 'Enquiries', icon: MessageSquare },
   { id: 'gallery', label: 'Gallery', icon: ImageIcon },
-  { id: 'laravel-users', label: 'Laravel Users', icon: Users },
+  { id: 'users', label: 'Users', icon: Users },
 ];
 
 const BOOKING_STATUS_OPTIONS = [
@@ -46,7 +46,7 @@ function clientName(booking) {
 
 function isUserActive(user, now) {
   if (!user) return false;
-  // Laravel users don't have real-time presence, check last login
+  // Users don't have real-time presence, check last login
   const lastLoginAt = user.last_login_at || user.last_login || user.updated_at || 0;
   const lastActiveAt = new Date(lastLoginAt).getTime();
   const age = now - lastActiveAt;
@@ -226,14 +226,13 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
     return () => clearTimeout(timer);
   }, [actionError]);
 
-  const bookings = useLaravelAdminBookings();
-  const enquiries = useLaravelAdminEnquiries();
-  const availability = useLaravelAvailability(availabilityDate);
+  const bookings = useAdminBookings();
+  const enquiries = useAdminEnquiries();
+  const availability = useAvailability(availabilityDate);
 
-  // Laravel API hooks
-  const { users: laravelUsers, loading: laravelUsersLoading, error: laravelUsersError, refresh: refreshLaravelUsers } = useLaravelUsers();
-  const laravelGallery = useLaravelGallery(true);
-  const gallery = laravelGallery;
+  // API hooks
+  const { users, loading: usersLoading, error: usersError, refresh: refreshUsers } = useUsers();
+  const gallery = useGallery(true);
 
   const activeSelectedUser = useMemo(() => {
     if (!selectedUserDetails) return null;
@@ -257,13 +256,13 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
     : null;
 
   const unreadCount = enquiries.enquiries.filter((item) => item.status === 'new').length;
-  const activeUsersCount = laravelUsers.filter((item) => isUserActive(item, clock)).length;
-  const newThisWeekCount = laravelUsers.filter((item) => isCreatedThisWeek(item.created_at)).length;
-  const disabledAccountsCount = laravelUsers.filter((item) => item.disabled === true).length;
+  const activeUsersCount = users.filter((item) => isUserActive(item, clock)).length;
+  const newThisWeekCount = users.filter((item) => isCreatedThisWeek(item.created_at)).length;
+  const disabledAccountsCount = users.filter((item) => item.disabled === true).length;
 
   const clientUsersCount = useMemo(() => {
-    return laravelUsers.filter((usr) => !usr.is_admin).length;
-  }, [laravelUsers]);
+    return users.filter((usr) => !usr.is_admin).length;
+  }, [users]);
 
   const bookingsCountByUser = useMemo(() => {
     const counts = {};
@@ -278,7 +277,7 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
   const filteredUsers = useMemo(() => {
     const needle = userSearch.trim().toLowerCase();
 
-    return laravelUsers
+    return users
       .filter((usr) => {
         const role = usr.is_admin ? 'Admin' : 'Client';
         const matchesRole = userRoleFilter === 'All' || (userRoleFilter === 'Clients' && role === 'Client') || (userRoleFilter === 'Admins' && role === 'Admin');
@@ -304,7 +303,7 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
         const timeB = new Date(b.created_at || 0).getTime();
         return userSortOrder === 'newest' ? timeB - timeA : timeA - timeB;
       });
-  }, [laravelUsers, userSearch, userRoleFilter, userStatusFilter, userSortOrder, clock]);
+  }, [users, userSearch, userRoleFilter, userStatusFilter, userSortOrder, clock]);
 
   const paginatedUsers = useMemo(() => {
     return filteredUsers.slice(0, pageLimit);
@@ -353,7 +352,7 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
     });
 
     try {
-      await laravelApi.updateAdminUser(targetId, { disabled: newDisabledState });
+      await api.updateAdminUser(targetId, { disabled: newDisabledState });
       setFeedback(`User account (${targetUser.email || targetUser.displayName || targetId}) ${newDisabledState ? 'disabled' : 'enabled'} successfully.`);
     } catch {
       setFeedback(`User account status updated to ${newDisabledState ? 'Disabled' : 'Enabled'}.`);
@@ -370,7 +369,7 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
     clearFeedback();
 
     try {
-      await laravelApi.deleteAdminUser(targetId, { delete_bookings: deleteBookingsOption });
+      await api.deleteAdminUser(targetId, { delete_bookings: deleteBookingsOption });
       setFeedback(`User account ${targetUser.email || targetUser.displayName} deleted successfully.`);
     } catch (err) {
       console.error('Unable to delete user:', err);
@@ -398,19 +397,19 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
 
     try {
       if (action.kind === 'booking-status') {
-        await laravelApi.updateBookingStatus(action.id, { status: action.status });
+        await api.updateBookingStatus(action.id, { status: action.status });
         await bookings.refresh();
         setFeedback(`Booking marked as ${action.status}.`);
       } else if (action.kind === 'booking-delete') {
-        await laravelApi.deleteAdminBooking(action.id);
+        await api.deleteAdminBooking(action.id);
         await bookings.refresh();
         setFeedback('Booking deleted permanently.');
       } else if (action.kind === 'enquiry-delete') {
-        await laravelApi.deleteAdminEnquiry(action.id);
+        await api.deleteAdminEnquiry(action.id);
         await enquiries.refresh();
         setFeedback('Enquiry deleted.');
       } else if (action.kind === 'gallery-delete') {
-        await laravelApi.deleteAdminGallery(action.id);
+        await api.deleteAdminGallery(action.id);
         await gallery.refresh();
         setFeedback('Gallery media and metadata deleted.');
       }
@@ -439,13 +438,13 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
       const nextAvailable = !available;
       if (collectionName === 'availability') {
         const current = allDailyAvailability?.slots || {};
-        await laravelApi.updateAdminAvailability(id, {
+        await api.updateAdminAvailability(id, {
           is_available: Object.values({ ...current, [field]: nextAvailable }).some(Boolean),
           slots: { ...current, [field]: nextAvailable },
         });
       } else {
         const current = weekdayDefault?.slots || {};
-        await laravelApi.updateAdminDefaultAvailability(id, {
+        await api.updateAdminDefaultAvailability(id, {
           is_available: Object.values({ ...current, [field]: nextAvailable }).some(Boolean),
           slots: { ...current, [field]: nextAvailable },
         });
@@ -500,7 +499,7 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
         body.append('division', galleryCategory.toLowerCase());
         body.append('description', galleryCaption.trim());
         body.append('image', file);
-        await laravelApi.createAdminGallery(body);
+        await api.createAdminGallery(body);
         setUploadProgress((prev) => ({ ...prev, [`${index}:${file.name}`]: 100 }));
         completed += 1;
       }
@@ -519,7 +518,7 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
   const saveGalleryEdit = async (item) => {
     setBusyKey(`gallery-edit:${item.id}`); clearFeedback();
     try {
-      await laravelApi.updateAdminGallery(item.id, {
+      await api.updateAdminGallery(item.id, {
         title: editingGallery[item.id]?.title ?? item.title ?? '',
         division: (editingGallery[item.id]?.category ?? item.category ?? 'Horticultural').toLowerCase(),
         description: editingGallery[item.id]?.caption ?? item.caption ?? item.description ?? '',
@@ -536,7 +535,7 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
   const handleLogout = async () => {
     clearFeedback();
     try {
-      await laravelApi.logout();
+      await api.logout();
       navigate('/admin/login', { replace: true });
     } catch (error) { setActionError(error.message || 'Could not log out.'); }
   };
@@ -655,7 +654,7 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
               {/* Stat Cards */}
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
                 {[
-                  ['Total Users', laravelUsers.length, Users, 'text-blue-500'],
+                  ['Total Users', users.length, Users, 'text-blue-500'],
                   ['Online Now', activeUsersCount, UserCheck, 'text-emerald-500'],
                   ['New This Week', newThisWeekCount, UserPlus, 'text-teal-400'],
                   ['Disabled Accounts', disabledAccountsCount, Ban, 'text-rose-500'],
@@ -685,16 +684,16 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-5 dark:border-slate-800">
                   <div>
                     <h2 className="font-black text-base">User Account Management</h2>
-                    <p className="text-xs text-slate-400 font-medium">Manage user permissions, status, and bookings ({laravelUsers.filter(u => !u.is_admin).length} Clients · {laravelUsers.filter(u => u.is_admin).length} Admins)</p>
+                    <p className="text-xs text-slate-400 font-medium">Manage user permissions, status, and bookings ({users.filter(u => !u.is_admin).length} Clients · {users.filter(u => u.is_admin).length} Admins)</p>
                   </div>
                   <button
                     type="button"
-                    onClick={refreshLaravelUsers}
-                    disabled={laravelUsersLoading}
+                    onClick={refreshUsers}
+                    disabled={usersLoading}
                     className="inline-flex items-center gap-2 rounded-xl border border-emerald-500/40 px-3 py-2 text-xs font-bold text-emerald-500 transition-colors hover:bg-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <RefreshCw className={`h-3.5 w-3.5 ${laravelUsersLoading ? 'animate-spin' : ''}`} />
-                    <span>{laravelUsersLoading ? 'Refreshing…' : 'Refresh Users'}</span>
+                    <RefreshCw className={`h-3.5 w-3.5 ${usersLoading ? 'animate-spin' : ''}`} />
+                    <span>{usersLoading ? 'Refreshing…' : 'Refresh Users'}</span>
                   </button>
                 </div>
 
@@ -730,15 +729,15 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
                     onChange={(e) => setUserRoleFilter(e.target.value)}
                     className={inputClass}
                   >
-                    <option value="All">All Roles ({laravelUsers.length})</option>
-                    <option value="Clients">Clients Only ({laravelUsers.filter(u => !u.is_admin).length})</option>
-                    <option value="Admins">Admins Only ({laravelUsers.filter(u => u.is_admin).length})</option>
+                    <option value="All">All Roles ({users.length})</option>
+                    <option value="Clients">Clients Only ({users.filter(u => !u.is_admin).length})</option>
+                    <option value="Admins">Admins Only ({users.filter(u => u.is_admin).length})</option>
                   </select>
                 </div>
 
                 <StateMessage
-                  loading={laravelUsersLoading && !laravelUsers.length}
-                  error={laravelUsersError}
+                  loading={usersLoading && !users.length}
+                  error={usersError}
                   isEmpty={!filteredUsers.length}
                   emptyText="No user accounts match the current filter or search criteria."
                   onReset={() => { setUserSearch(''); setUserStatusFilter('All'); setUserRoleFilter('All'); }}
@@ -1051,7 +1050,7 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
                         clearFeedback();
                         try {
                           const nextStatus = enq.status === 'new' ? 'replied' : 'new';
-                          await laravelApi.updateEnquiryStatus(enq.id, { status: nextStatus });
+                          await api.updateEnquiryStatus(enq.id, { status: nextStatus });
                           await enquiries.refresh();
                           setFeedback(nextStatus === 'new' ? 'Marked as unread.' : 'Marked as read.');
                         } catch (err) { setActionError(err.message || 'Could not update enquiry.'); }
@@ -1073,7 +1072,7 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
             <section className="space-y-6">
               <form onSubmit={uploadGallery} className={`rounded-3xl border p-6 space-y-4 ${cardClass}`}>
                 <h2 className="text-lg font-black tracking-tight">Upload Gallery Media</h2>
-                <p className="text-xs text-slate-400">Photos up to 5 MB are uploaded through the Laravel API.</p>
+                <p className="text-xs text-slate-400">Photos up to 5 MB are uploaded through the API.</p>
                 <div className="grid gap-3 sm:grid-cols-3">
                   <input aria-label="Title" value={galleryTitle} onChange={(e) => setGalleryTitle(e.target.value)} placeholder="Media Title (optional)" className={inputClass} />
                   <select aria-label="Category" value={galleryCategory} onChange={(e) => setGalleryCategory(e.target.value)} className={inputClass}>
@@ -1101,7 +1100,7 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
                   </div>
                 )}
                 <button type="submit" disabled={uploading || !galleryFiles.length} className="px-6 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow-lg transition-all disabled:opacity-50">
-                  {uploading ? 'Uploading through Laravel…' : `Upload ${galleryFiles.length || ''} Selected Item(s)`}
+                  {uploading ? 'Uploading…' : `Upload ${galleryFiles.length || ''} Selected Item(s)`}
                 </button>
               </form>
 
@@ -1126,7 +1125,7 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
                           </select>
                           <div className="flex gap-2 pt-2">
                             <button type="button" disabled={busyKey === `gallery-edit:${item.id}`} onClick={() => saveGalleryEdit(item)} className="flex-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 py-2 text-xs font-black text-white transition-all disabled:opacity-50">Save Details</button>
-                            <button type="button" onClick={() => setConfirmAction({ kind: 'gallery-delete', id: item.id, item, title: 'Delete Gallery Media?', body: 'Permanently delete this gallery item from the Laravel backend.' })} className="p-2 rounded-xl border border-rose-500/40 text-rose-500 hover:bg-rose-500/10 transition-colors">
+                            <button type="button" onClick={() => setConfirmAction({ kind: 'gallery-delete', id: item.id, item, title: 'Delete Gallery Media?', body: 'Permanently delete this gallery item from the backend.' })} className="p-2 rounded-xl border border-rose-500/40 text-rose-500 hover:bg-rose-500/10 transition-colors">
                               <Trash2 className="w-4 h-4" />
                             </button>
                           </div>
@@ -1139,23 +1138,23 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
             </section>
           )}
 
-          {/* LARAVEL USERS SECTION */}
-          {activeSection === 'laravel-users' && (
+          {/* USERS SECTION */}
+          {activeSection === 'users' && (
             <section className="space-y-6">
               <article className={`overflow-hidden rounded-3xl border ${cardClass}`}>
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-5 dark:border-slate-800">
                   <div>
-                    <h2 className="font-black text-base">Laravel Database Users</h2>
-                    <p className="text-xs text-slate-400 font-medium">Users registered in the Laravel/MySQL database ({laravelUsers.length} users)</p>
+                    <h2 className="font-black text-base">Database Users</h2>
+                    <p className="text-xs text-slate-400 font-medium">Users registered in the database ({users.length} users)</p>
                   </div>
                   <button
                     type="button"
-                    onClick={refreshLaravelUsers}
-                    disabled={laravelUsersLoading}
+                    onClick={refreshUsers}
+                    disabled={usersLoading}
                     className="inline-flex items-center gap-2 rounded-xl border border-emerald-500/40 px-3 py-2 text-xs font-bold text-emerald-500 transition-colors hover:bg-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <RefreshCw className={`h-3.5 w-3.5 ${laravelUsersLoading ? 'animate-spin' : ''}`} />
-                    <span>{laravelUsersLoading ? 'Refreshing…' : 'Refresh Users'}</span>
+                    <RefreshCw className={`h-3.5 w-3.5 ${usersLoading ? 'animate-spin' : ''}`} />
+                    <span>{usersLoading ? 'Refreshing…' : 'Refresh Users'}</span>
                   </button>
                 </div>
 
@@ -1164,7 +1163,7 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
                   <div className="relative sm:col-span-2">
                     <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                     <input
-                      aria-label="Search Laravel users by name, email or phone"
+                      aria-label="Search users by name, email or phone"
                       placeholder="Search name, email, phone…"
                       className={`${inputClass} w-full pl-9`}
                     />
@@ -1178,23 +1177,23 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
                 </div>
 
                 {/* Loading/Error/Empty States */}
-                {laravelUsersLoading && !laravelUsers.length && (
+                {usersLoading && !users.length && (
                   <div className="flex flex-col items-center justify-center p-10 text-slate-500 font-sans">
                     <Loader2 className="w-6 h-6 animate-spin text-emerald-500 mb-2" />
-                    <p className="text-xs font-bold uppercase tracking-wider text-emerald-500">Loading Laravel Users…</p>
+                    <p className="text-xs font-bold uppercase tracking-wider text-emerald-500">Loading Users…</p>
                   </div>
                 )}
 
-                {laravelUsersError && (
+                {usersError && (
                   <div role="alert" className="m-4 rounded-2xl border border-rose-500/40 bg-rose-500/10 p-4 text-xs text-rose-600 dark:text-rose-300">
                     <p className="font-bold flex items-center gap-2">
                       <AlertTriangle className="w-4 h-4 shrink-0" />
                       <span>Failed to load users</span>
                     </p>
-                    <p className="mt-1 text-[11px] opacity-80">{laravelUsersError}</p>
+                    <p className="mt-1 text-[11px] opacity-80">{usersError}</p>
                     <button
                       type="button"
-                      onClick={refreshLaravelUsers}
+                      onClick={refreshUsers}
                       className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 border border-rose-500/30 text-xs font-bold transition-all"
                     >
                       <RefreshCw className="w-3.5 h-3.5" />
@@ -1203,12 +1202,12 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
                   </div>
                 )}
 
-                {!laravelUsersLoading && !laravelUsersError && !laravelUsers.length && (
+                {!usersLoading && !usersError && !users.length && (
                   <div className="p-12 text-center text-xs text-slate-400 font-medium space-y-3">
-                    <p className="font-semibold">No Laravel users found in the database.</p>
+                    <p className="font-semibold">No users found in the database.</p>
                     <button
                       type="button"
-                      onClick={refreshLaravelUsers}
+                      onClick={refreshUsers}
                       className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold transition-all"
                     >
                       <RefreshCw className="w-3.5 h-3.5" />
@@ -1218,7 +1217,7 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
                 )}
 
                 {/* Users Table */}
-                {laravelUsers.length > 0 && (
+                {users.length > 0 && (
                   <div className="overflow-x-auto">
                     <table className="w-full min-w-[840px] text-left text-xs">
                       <thead className="border-b border-slate-200 dark:border-slate-800 uppercase text-[10px] font-black text-slate-400">
@@ -1233,7 +1232,7 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-semibold">
-                        {laravelUsers.map((usr) => (
+                        {users.map((usr) => (
                           <tr key={usr.id} className="hover:bg-slate-500/5 transition-colors">
                             <td className="p-4 font-bold flex items-center gap-3">
                               <div className={`w-9 h-9 rounded-full flex items-center justify-center font-black text-xs text-white overflow-hidden shrink-0 border ${
@@ -1316,10 +1315,10 @@ function MainAdminDashboard({ isDarkMode, setIsDarkMode }) {
                 )}
 
                 {/* Pagination */}
-                {laravelUsers.length > 0 && (
+                {users.length > 0 && (
                   <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs">
                     <span className="text-slate-400">
-                      Showing {laravelUsers.length} of {laravelUsers.length} users
+                      Showing {users.length} of {users.length} users
                     </span>
                     <div className="flex gap-2">
                       <button

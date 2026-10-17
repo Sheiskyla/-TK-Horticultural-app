@@ -1,4 +1,4 @@
-const { Booking, Slot, User } = require('../models');
+const { Booking, Slot } = require('../models');
 const { v4: uuidv4 } = require('uuid');
 const db = require('../models');
 

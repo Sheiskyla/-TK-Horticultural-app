@@ -1,7 +1,7 @@
-import { useLaravelGallery } from '../hooks/useLaravelApi';
+import { useGallery } from '../hooks/useApi';
 
 export default function GalleryGrid({ isDarkMode, compact = false }) {
-  const { documents, loading, error } = useLaravelGallery();
+  const { documents, loading, error } = useGallery();
   const cardBg = isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-md';
   const secondaryText = isDarkMode ? 'text-slate-400' : 'text-slate-600';
 

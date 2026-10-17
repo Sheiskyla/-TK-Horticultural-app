@@ -1,4 +1,4 @@
-import laravelApi from '../services/laravelApi';
+import api from '../services/api';
 
 export function uploadMediaFile(file, _path, options = {}) {
   const maxSize = typeof options === 'number' ? options : options.maxSize ?? 25 * 1024 * 1024;
@@ -12,7 +12,7 @@ export function uploadMediaFile(file, _path, options = {}) {
   }
 
   onProgress?.(0);
-  return laravelApi.uploadFile(file).then((result) => {
+  return api.uploadFile(file).then((result) => {
     onProgress?.(100);
     return {
       name: result.name,

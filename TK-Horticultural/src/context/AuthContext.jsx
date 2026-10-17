@@ -1,34 +1,34 @@
 import { useEffect, useState } from 'react';
 import { AuthContext } from './authContextCore';
-import { laravelApi } from '../services/laravelApi';
+import { api } from '../services/api';
 
 export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!laravelApi.isAuthenticated()) {
+    if (!api.isAuthenticated()) {
       queueMicrotask(() => setLoading(false));
       return;
     }
 
-    laravelApi.getCurrentUser()
+    api.getCurrentUser()
       .then((user) => setCurrentUser({ ...user, displayName: user.name, uid: user.id }))
       .catch(() => {
-        laravelApi.setToken(null);
+        api.setToken(null);
         setCurrentUser(null);
       })
       .finally(() => setLoading(false));
   }, []);
 
   const login = async (email, password) => {
-    const response = await laravelApi.login(email, password);
+    const response = await api.login(email, password);
     setCurrentUser({ ...response.user, displayName: response.user.name, uid: response.user.id });
     return response;
   };
 
   const signup = async (email, password, displayName, phone = '', address = '') => {
-    const response = await laravelApi.register({
+    const response = await api.register({
       name: displayName,
       email,
       password,
@@ -41,17 +41,17 @@ export function AuthProvider({ children }) {
   };
 
   const loginWithGoogle = async (credential) => {
-    const response = await laravelApi.loginWithGoogleToken(credential);
+    const response = await api.loginWithGoogleToken(credential);
     setCurrentUser({ ...response.user, displayName: response.user.name, uid: response.user.id });
     return response;
   };
 
   const logout = async () => {
     try {
-      await laravelApi.logout();
+      await api.logout();
     } finally {
       setCurrentUser(null);
-      laravelApi.setToken(null);
+      api.setToken(null);
     }
   };
 

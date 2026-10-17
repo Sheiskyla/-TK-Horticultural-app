@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import laravelApi from '../services/laravelApi';
+import api from '../services/api';
 
 export const BOOKING_SLOTS = [
   { id: 'slot-1', field: 'slot-1', label: '9am–12pm' },
@@ -24,7 +24,7 @@ export default function useDateAvailability(date) {
     if (!date) return undefined;
     let active = true;
     const timer = window.setTimeout(() => {
-      laravelApi.getAvailability({ date })
+      api.getAvailability({ date })
         .then((slots) => {
           if (!active) return;
           setState({

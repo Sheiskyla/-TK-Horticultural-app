@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { laravelApi } from '../services/laravelApi';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { api } from '../services/api';
 
-export function useLaravelUsers() {
+export function useUsers() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -16,7 +16,7 @@ export function useLaravelUsers() {
   const fetchUsers = useCallback(async (params = {}) => {
     setError(null);
     try {
-      const data = await laravelApi.getAdminUsers(params);
+      const data = await api.getAdminUsers(params);
       if (!mountedRef.current) return;
       setUsers(data.data || []);
       setPagination({
@@ -62,7 +62,7 @@ export function useLaravelUsers() {
   };
 }
 
-export function useLaravelGallery(admin = false) {
+export function useGallery(admin = false) {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -73,8 +73,8 @@ export function useLaravelGallery(admin = false) {
     setError(null);
     try {
       const data = admin
-        ? await laravelApi.getAdminGallery()
-        : await laravelApi.getGallery();
+        ? await api.getAdminGallery()
+        : await api.getGallery();
       if (mountedRef.current) setDocuments(Array.isArray(data) ? data : (data.data || []));
     } catch (err) {
       if (mountedRef.current) {
@@ -98,7 +98,7 @@ export function useLaravelGallery(admin = false) {
   return { documents, loading, error, refresh: fetchGallery };
 }
 
-export function useLaravelAdminDashboard() {
+export function useAdminDashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -107,7 +107,7 @@ export function useLaravelAdminDashboard() {
   const fetchDashboard = useCallback(async () => {
     setError(null);
     try {
-      const result = await laravelApi.getAdminDashboard();
+      const result = await api.getAdminDashboard();
       if (!mountedRef.current) return;
       setData(result);
     } catch (err) {
@@ -134,7 +134,7 @@ export function useLaravelAdminDashboard() {
   return { data, loading, error, refresh: fetchDashboard };
 }
 
-export function useLaravelBookings(params = {}) {
+export function useBookings(params = {}) {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -144,7 +144,7 @@ export function useLaravelBookings(params = {}) {
   const fetchBookings = useCallback(async (queryParams = {}) => {
     setError(null);
     try {
-      const data = await laravelApi.getAdminBookings(queryParams);
+      const data = await api.getAdminBookings(queryParams);
       if (!mountedRef.current) return;
       setBookings(data.data || []);
       setPagination({
@@ -178,7 +178,7 @@ export function useLaravelBookings(params = {}) {
   return { bookings, loading, error, pagination, fetchBookings, refresh: () => { setLoading(true); fetchBookings(params); } };
 }
 
-export function useLaravelEnquiries(params = {}) {
+export function useEnquiries(params = {}) {
   const [enquiries, setEnquiries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -188,7 +188,7 @@ export function useLaravelEnquiries(params = {}) {
   const fetchEnquiries = useCallback(async (queryParams = {}) => {
     setError(null);
     try {
-      const data = await laravelApi.getAdminEnquiries(queryParams);
+      const data = await api.getAdminEnquiries(queryParams);
       if (!mountedRef.current) return;
       setEnquiries(data.data || []);
       setPagination({
@@ -222,17 +222,17 @@ export function useLaravelEnquiries(params = {}) {
   return { enquiries, loading, error, pagination, fetchEnquiries, refresh: () => { setLoading(true); fetchEnquiries(params); } };
 }
 
-export function useLaravelAdminBookings() {
-  const stableParams = useRef({});
-  return useLaravelBookings(stableParams.current);
+export function useAdminBookings() {
+  const stableParams = useMemo(() => ({}), []);
+  return useBookings(stableParams);
 }
 
-export function useLaravelAdminEnquiries() {
-  const stableParams = useRef({});
-  return useLaravelEnquiries(stableParams.current);
+export function useAdminEnquiries() {
+  const stableParams = useMemo(() => ({}), []);
+  return useEnquiries(stableParams);
 }
 
-export function useLaravelAvailability(date) {
+export function useAvailability(date) {
   const [data, setData] = useState({ date: null, weekday: null });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -242,7 +242,7 @@ export function useLaravelAvailability(date) {
     setLoading(true);
     setError(null);
     try {
-      const result = await laravelApi.getAdminAvailability(date);
+      const result = await api.getAdminAvailability(date);
       setData(result);
     } catch (err) {
       setError(err);
