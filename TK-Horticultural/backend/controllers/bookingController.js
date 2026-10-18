@@ -1,5 +1,5 @@
 const { Booking, Slot } = require('../models');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('node:crypto');
 const db = require('../models');
 
 class BookingController {
@@ -84,7 +84,7 @@ class BookingController {
       );
 
       const booking = await Booking.create({
-        ref: 'TK-' + uuidv4().toUpperCase().substring(0, 6),
+        ref: 'TK-' + randomUUID().toUpperCase().substring(0, 6),
         user_id: req.user.id,
         division,
         service,

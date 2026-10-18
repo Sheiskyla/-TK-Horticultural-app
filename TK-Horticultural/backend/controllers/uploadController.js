@@ -1,4 +1,4 @@
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('node:crypto');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
@@ -11,7 +11,7 @@ const storage = multer.diskStorage({
     cb(null, uploadPath);
   },
   filename: (req, file, cb) => {
-    const uniqueSuffix = uuidv4();
+    const uniqueSuffix = randomUUID();
     cb(null, uniqueSuffix + path.extname(file.originalname));
   }
 });
