@@ -3,6 +3,8 @@ require('dotenv').config();
 const mysqlPublicUrl = process.env.MYSQL_PUBLIC_URL;
 const publicUrlIsMysqlUrl = /^mysql:\/\//i.test(mysqlPublicUrl || '');
 const publicUrlIsHost = mysqlPublicUrl && !/^[a-z][a-z\d+.-]*:\/\//i.test(mysqlPublicUrl);
+const publicHostPort = publicUrlIsHost && mysqlPublicUrl.match(/^([^:/?#]+):(\d+)$/);
+const publicHost = publicHostPort ? publicHostPort[1] : publicUrlIsHost ? mysqlPublicUrl : undefined;
 
 const baseConfig = {
   dialect: 'mysql',
@@ -13,8 +15,8 @@ const baseConfig = {
       : /^mysql:\/\//i.test(process.env.MYSQL_URL || '')
         ? 'MYSQL_URL'
         : undefined,
-  host: (publicUrlIsHost ? mysqlPublicUrl : undefined) || process.env.DB_HOST || process.env.MYSQLHOST || 'localhost',
-  port: process.env.DB_PORT || process.env.MYSQLPORT || 3306,
+  host: publicHost || process.env.DB_HOST || process.env.MYSQLHOST || 'localhost',
+  port: publicHostPort?.[2] || process.env.DB_PORT || process.env.MYSQLPORT || 3306,
   database: process.env.DB_DATABASE || process.env.MYSQLDATABASE || 'tk_horticultural',
   username: process.env.DB_USERNAME || process.env.MYSQLUSER || 'root',
   password: process.env.DB_PASSWORD || process.env.MYSQLPASSWORD || '',
