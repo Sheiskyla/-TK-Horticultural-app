@@ -58,8 +58,9 @@ the Railway MySQL service's Settings → Networking. In Vercel, add
 `DATABASE_URL` with the same value, then redeploy. The backend accepts either
 complete `mysql://...` URL. If Railway gives you a TCP proxy host and port,
 set `MYSQL_PUBLIC_URL` to `hostname:port`, or set the `DB_HOST` and `DB_PORT`
-variables separately. Also set `DB_DATABASE`, `DB_USERNAME`, and
-`DB_PASSWORD` in Vercel. Railway's private
+variables separately. Set the database credentials in Vercel using either
+`DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD`, or Railway's
+`MYSQL_DATABASE`, `MYSQL_USER`, and `MYSQL_PASSWORD`. Railway's private
 `MYSQLHOST`/`MYSQL_URL` values are only reachable from services inside Railway,
 not from Vercel. They are recognized by the app if its API is hosted in
 Railway. Do not set `DB_SOCKET_PATH` on Vercel; it is only for local database

@@ -17,9 +17,9 @@ const baseConfig = {
         : undefined,
   host: publicHost || process.env.DB_HOST || process.env.MYSQLHOST || 'localhost',
   port: publicHostPort?.[2] || process.env.DB_PORT || process.env.MYSQLPORT || 3306,
-  database: process.env.DB_DATABASE || process.env.MYSQLDATABASE || 'tk_horticultural',
-  username: process.env.DB_USERNAME || process.env.MYSQLUSER || 'root',
-  password: process.env.DB_PASSWORD || process.env.MYSQLPASSWORD || '',
+  database: process.env.DB_DATABASE || process.env.MYSQL_DATABASE || process.env.MYSQLDATABASE || 'tk_horticultural',
+  username: process.env.DB_USERNAME || process.env.MYSQL_USER || process.env.MYSQLUSER || 'root',
+  password: process.env.DB_PASSWORD || process.env.MYSQL_PASSWORD || process.env.MYSQLPASSWORD || '',
   logging: false
 };
 
