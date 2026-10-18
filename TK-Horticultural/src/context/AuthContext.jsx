@@ -1,25 +1,28 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { jwtDecode } from 'jwt-decode';
 import { AuthContext } from './authContextCore';
 import { api } from '../services/api';
 
 export function AuthProvider({ children }) {
-  const [currentUser, setCurrentUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!api.isAuthenticated()) {
-      queueMicrotask(() => setLoading(false));
-      return;
+  const [currentUser, setCurrentUser] = useState(() => {
+    const token = api.getToken();
+    if (!token) return null;
+    try {
+      const decoded = jwtDecode(token);
+      return {
+        id: decoded.id,
+        email: decoded.email,
+        is_admin: decoded.is_admin,
+        name: decoded.email.split('@')[0],
+        displayName: decoded.email.split('@')[0],
+        uid: decoded.id,
+      };
+    } catch {
+      api.setToken(null);
+      return null;
     }
-
-    api.getCurrentUser()
-      .then((user) => setCurrentUser({ ...user, displayName: user.name, uid: user.id }))
-      .catch(() => {
-        api.setToken(null);
-        setCurrentUser(null);
-      })
-      .finally(() => setLoading(false));
-  }, []);
+  });
+  const [loading] = useState(false);
 
   const login = async (email, password) => {
     const response = await api.login(email, password);
