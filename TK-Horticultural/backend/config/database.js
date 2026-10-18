@@ -18,7 +18,7 @@ const baseConfig = {
 };
 
 // Use socket path if provided (XAMPP), otherwise use host/port
-if (process.env.DB_SOCKET_PATH) {
+if (process.env.DB_SOCKET_PATH && !baseConfig.use_env_variable) {
   baseConfig.host = undefined;
   baseConfig.socketPath = process.env.DB_SOCKET_PATH;
 }

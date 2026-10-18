@@ -60,8 +60,9 @@ URL. Alternatively, use the TCP proxy host and port with `DB_HOST`, `DB_PORT`,
 `DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD`. Railway's private
 `MYSQLHOST`/`MYSQL_URL` values are only reachable from services inside Railway,
 not from Vercel. They are recognized by the app if its API is hosted in
-Railway. Keep the database password and URL server-side, never in a `VITE_`
-variable.
+Railway. Do not set `DB_SOCKET_PATH` on Vercel; it is only for local database
+setups, and a configured Railway URL takes precedence. Keep the database
+password and URL server-side, never in a `VITE_` variable.
 
 For a new, empty database, create the application tables once by running
 `node backend/setup.js` from a trusted environment that has the Railway public
