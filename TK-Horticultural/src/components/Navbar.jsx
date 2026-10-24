@@ -200,7 +200,7 @@ export default function Navbar({ isDarkMode, onToggleDarkMode, currentUser }) {
                 className="px-4 py-2.5 rounded-xl text-xs font-black text-slate-950 bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-400 hover:from-emerald-300 hover:to-teal-200 transition-all shadow-md flex items-center gap-1.5 min-h-[44px] whitespace-nowrap"
               >
                 <Sparkles className="w-4 h-4 text-slate-950" />
-                <span>Get Free Quote</span>
+                <span>Booking/Get a Quote</span>
               </button>
 
               <a
@@ -392,7 +392,7 @@ export default function Navbar({ isDarkMode, onToggleDarkMode, currentUser }) {
                   onClick={handleGetQuote}
                   className="w-full min-h-[48px] rounded-xl bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-400 text-slate-950 font-black text-sm shadow-lg"
                 >
-                  Get a Free Quote
+                  Booking/Get a Quote
                 </button>
 
                 <a

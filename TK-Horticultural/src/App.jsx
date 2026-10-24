@@ -88,7 +88,7 @@ function LandingPage({ isDarkMode, setIsDarkMode, currentUser }) {
                     className="px-6 sm:px-7 py-3.5 sm:py-4 rounded-xl font-black text-slate-950 bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-400 hover:from-emerald-300 hover:to-teal-200 shadow-xl shadow-emerald-500/20 transition-all duration-300 flex items-center justify-center gap-2 text-sm sm:text-base group"
                   >
                     <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-slate-950 group-hover:scale-110 transition-transform" />
-                    <span>Get a Free Quote</span>
+                    <span>Booking/Get a Quote</span>
                     <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5 text-slate-950 group-hover:translate-x-1 transition-transform" />
                   </button>
 

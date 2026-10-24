@@ -40,7 +40,7 @@ export default function Gallery({ isDarkMode, setIsDarkMode, currentUser }) {
               onClick={() => navigate('/booking')}
               className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-emerald-500 px-6 py-3 font-black text-slate-950 shadow-md transition-colors hover:bg-emerald-400"
             >
-              Get a Free Quote
+              Booking/Get a Quote
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>

@@ -123,14 +123,30 @@ export default function QuoteWizard({ isDarkMode, setIsDarkMode, currentUser }) 
     setUploadedFiles(updated);
   };
 
+  const canContinueToDetails = address.trim() && jobNotes.trim() && uploadedFiles.length > 0;
+  const canContinueToSummary = selectedServices.length > 0 && bookingDate && selectedSlot && canContinueToDetails;
+
+  const handleStepChange = (step) => {
+    if (step <= currentStep) {
+      setCurrentStep(step);
+      return;
+    }
+
+    if (step >= 2 && selectedServices.length === 0) return;
+    if (step >= 3 && (!bookingDate || !selectedSlot)) return;
+    if (step >= 4 && !canContinueToDetails) return;
+
+    setCurrentStep(step);
+  };
+
   const handleWizardSubmit = async (e) => {
     e.preventDefault();
     if (availabilityLoading || availabilityError) {
       setSubmitError('Availability is still loading or could not be checked. Please try again.');
       return;
     }
-    if (!currentUser?.uid || !selectedSlot) {
-      setSubmitError('Choose an available time slot before submitting.');
+    if (!currentUser?.uid || !selectedSlot || !canContinueToSummary || !estimatedBudget.trim()) {
+      setSubmitError('Please complete every required section before submitting.');
       return;
     }
 
@@ -149,6 +165,7 @@ export default function QuoteWizard({ isDarkMode, setIsDarkMode, currentUser }) 
         service: selectedServices.join(', '),
         sub_services: selectedServices,
         notes: `${jobNotes.trim()}${estimatedBudget ? `\nEstimated budget: ${estimatedBudget}` : ''}`,
+        estimated_budget: estimatedBudget.trim(),
         date: bookingDate,
         slot_id: chosen.id,
         address: address.trim(),
@@ -232,7 +249,7 @@ ${selectedServices.length > 0 ? selectedServices.map(s => `• ${s}`).join('\n')
               ].map((s) => (
                 <div 
                   key={s.step} 
-                  onClick={() => setCurrentStep(s.step)}
+                  onClick={() => handleStepChange(s.step)}
                   className={`py-3 px-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 min-h-[44px] ${
                     currentStep === s.step
                       ? 'bg-emerald-500 text-slate-950 shadow-md font-black'
@@ -389,6 +406,7 @@ ${selectedServices.length > 0 ? selectedServices.map(s => `• ${s}`).join('\n')
                       </label>
                       <input
                         type="date"
+                        required
                         min={todayStr()}
                         value={bookingDate}
                         onChange={(e) => {
@@ -467,7 +485,7 @@ ${selectedServices.length > 0 ? selectedServices.map(s => `• ${s}`).join('\n')
 
                     <button
                       onClick={() => setCurrentStep(3)}
-                      disabled={!selectedSlot}
+                      disabled={!selectedSlot || availabilityLoading || Boolean(availabilityError)}
                       className="w-full sm:w-auto px-8 py-3.5 rounded-xl font-black text-slate-950 bg-gradient-to-r from-emerald-400 to-teal-300 hover:from-emerald-300 hover:to-teal-200 transition-all text-xs flex items-center justify-center gap-2 shadow-md min-h-[44px] disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <span>Continue to Details & Photos</span>
@@ -513,6 +531,7 @@ ${selectedServices.length > 0 ? selectedServices.map(s => `• ${s}`).join('\n')
                       </label>
                       <textarea
                         rows={3}
+                        required
                         placeholder="Describe the job size, access points, garden height, or specific items to clear..."
                         value={jobNotes}
                         onChange={(e) => setJobNotes(e.target.value)}
@@ -532,6 +551,7 @@ ${selectedServices.length > 0 ? selectedServices.map(s => `• ${s}`).join('\n')
                         <input 
                           type="file"
                           multiple
+                          required={uploadedFiles.length === 0}
                           accept="image/*,video/*"
                           onChange={handleFileUpload}
                           className="absolute inset-0 opacity-0 cursor-pointer w-full h-full min-h-[100px]"
@@ -585,6 +605,7 @@ ${selectedServices.length > 0 ? selectedServices.map(s => `• ${s}`).join('\n')
 
                     <button
                       onClick={() => setCurrentStep(4)}
+                      disabled={!canContinueToDetails}
                       className="w-full sm:w-auto px-8 py-3.5 rounded-xl font-black text-slate-950 bg-gradient-to-r from-emerald-400 to-teal-300 hover:from-emerald-300 hover:to-teal-200 transition-all text-xs flex items-center justify-center gap-2 shadow-md min-h-[44px]"
                     >
                       <span>Continue to Summary</span>
@@ -672,10 +693,11 @@ ${selectedServices.length > 0 ? selectedServices.map(s => `• ${s}`).join('\n')
                       </div>
                       <label className="block">
                         <span className={`block font-bold mb-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
-                          Estimated budget (optional)
+                          Estimated budget
                         </span>
                         <input
                           type="number"
+                          required
                           min="0"
                           step="0.01"
                           value={estimatedBudget}

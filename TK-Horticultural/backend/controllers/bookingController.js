@@ -45,8 +45,19 @@ class BookingController {
         media
       } = req.body;
 
-      // Validation (basic)
-      if (!division || !service || !date || !slot_id || !client_name || !client_email || !client_phone) {
+      const hasMedia = Array.isArray(media) && media.length > 0;
+      if (
+        !division ||
+        !service ||
+        !date ||
+        !slot_id ||
+        !address?.trim() ||
+        !notes?.trim() ||
+        !client_name?.trim() ||
+        !client_email?.trim() ||
+        !client_phone?.trim() ||
+        !hasMedia
+      ) {
         return res.status(422).json({ message: 'Validation failed' });
       }
 

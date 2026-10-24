@@ -145,6 +145,14 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
       setBookingError('Please describe the work you want us to carry out.');
       return;
     }
+    if (jobFiles.length === 0) {
+      setBookingError('Please upload at least one photo or video so we can assess the work.');
+      return;
+    }
+    if (!(profile.phone || '').trim()) {
+      setBookingError('Please add your phone number to your profile before booking.');
+      return;
+    }
 
     setSaving(true);
     setBookingError('');
@@ -286,7 +294,7 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
             onClick={() => navigate('/booking')}
             className="mt-4 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs"
           >
-            Get a Quote
+            Booking/Get a Quote
           </button>
         </div>
       ) : (
@@ -551,10 +559,10 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
               ? 'bg-emerald-950 border-emerald-700 text-emerald-300 hover:bg-emerald-900'
               : 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100'
           }`}
-          title="Get a Quote"
+          title="Booking/Get a Quote"
         >
           <Sparkles className="w-4 h-4 text-emerald-500" />
-          <span>Get a Quote</span>
+          <span>Booking/Get a Quote</span>
         </button>
 
         <button
@@ -664,7 +672,7 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
                     className="w-full sm:w-auto px-6 py-3.5 rounded-xl font-black text-slate-950 bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-400 hover:from-emerald-300 hover:to-teal-200 shadow-lg text-xs flex items-center justify-center gap-2"
                   >
                     <Plus className="w-4 h-4 text-slate-950" />
-                    <span>Get a Quote</span>
+                    <span>Booking/Get a Quote</span>
                   </button>
                 </div>
 
@@ -783,6 +791,7 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
                       <MapPin className="w-4 h-4 absolute left-3.5 top-3.5 text-emerald-500" />
                       <input
                         type="text"
+                        required
                         value={jobLocation}
                         onChange={(e) => setJobLocation(e.target.value)}
                         placeholder="Enter the property or site address"
@@ -804,7 +813,7 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
                     }`}>
                       <Plus className="w-4 h-4 text-emerald-500" />
                       <span className="text-xs font-bold">Choose files</span>
-                      <input type="file" accept="image/*,video/*" multiple className="hidden" onChange={handleJobFiles} />
+                      <input type="file" accept="image/*,video/*" multiple required={jobFiles.length === 0} className="hidden" onChange={handleJobFiles} />
                     </label>
                     {jobFiles.length > 0 && (
                       <div className="mt-3 space-y-2">
@@ -845,6 +854,7 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
                     5. Project Details
                   </label>
                   <textarea
+                    required
                     value={jobDetails}
                     onChange={(e) => setJobDetails(e.target.value)}
                     rows={5}
@@ -953,7 +963,7 @@ export default function Dashboard({ isDarkMode, setIsDarkMode, currentUser }) {
 
                     <button
                       onClick={reserveSlot}
-                      disabled={!selectedSlot || saving}
+                      disabled={!selectedSlot || !jobLocation.trim() || !jobDetails.trim() || jobFiles.length === 0 || !(profile.phone || '').trim() || saving}
                       className="w-full sm:w-auto px-8 py-3.5 rounded-xl font-black text-slate-950 bg-gradient-to-r from-emerald-400 to-teal-300 hover:from-emerald-300 hover:to-teal-200 transition-all shadow-lg text-xs flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       <CheckCircle className="w-4 h-4 text-slate-950" />
